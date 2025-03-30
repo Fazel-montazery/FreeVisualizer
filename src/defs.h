@@ -1,4 +1,8 @@
 #pragma once
 
-#define WIN_WIDTH 1000
-#define WIN_HEIGHT 1000
+#define DEFAULT_STATE			\
+	{				\
+		.window	= NULL,		\
+		.winWidth = 1000,	\
+		.winHeight = 1000,	\
+	}
