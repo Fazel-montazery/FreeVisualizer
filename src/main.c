@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include "../include/glad/glad.h"
 #include <GLFW/glfw3.h>
 
 #include "defs.h"
@@ -17,18 +18,19 @@ static void glfw_error_callback(int error, const char* description)
 // Initialize the window for opengl
 static bool initWindow(int width, int height)
 {
+#ifndef NDEBUG
+	glfwSetErrorCallback(glfw_error_callback);
+#endif
+
 	if (!glfwInit())
 	{
 		return false;
 	}
 
-#ifndef NDEBUG
-	glfwSetErrorCallback(glfw_error_callback);
-#endif
-
 	return true;
 }
 
+// Release all resources
 static void deinitApp(void)
 {
 	glfwTerminate();

@@ -1,6 +1,6 @@
 .PHONY: clean
 
-src := src/main.c
+src := src/main.c src/glad.c
 libs := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl
 cc := gcc
 target := fv
