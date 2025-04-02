@@ -8,7 +8,7 @@
 #include "defs.h"
 
 // App State
-struct
+static struct
 {
 	// Window
 	GLFWwindow* window;
@@ -25,7 +25,7 @@ static void loop(void);
 static void deinitApp(void);
 
 // Main
-int main(void)
+int main(int argc, char** argv)
 {
 	if(!initWindow(state.winWidth, state.winHeight)) return -1;
 	loop();
@@ -50,7 +50,7 @@ static void glfw_framebuffer_size_callback(GLFWwindow* window, int width, int he
 	}
 }
 
-void glfwWindowPosCallback(GLFWwindow* window, int xpos, int ypos) 
+static void glfwWindowPosCallback(GLFWwindow* window, int xpos, int ypos) 
 {
 	if (!state.fullscreen) {
 		state.winPosX = xpos;
