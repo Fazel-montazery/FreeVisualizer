@@ -6,6 +6,7 @@
 #include <GLFW/glfw3.h>
 
 #include "defs.h"
+#include "opts.h"
 
 // App State
 static struct
@@ -17,6 +18,13 @@ static struct
 	int32_t winPosX;
 	int32_t winPosY;
 	bool fullscreen;
+
+	// Music
+	char* musicPath;
+
+	// Shaders
+	char fragShaderPath[PATH_SIZE];
+
 } state = DEFAULT_STATE;
 
 // Blueprints
@@ -27,6 +35,9 @@ static void deinitApp(void);
 // Main
 int main(int argc, char** argv)
 {
+	if (!parseOpts(argc, argv, &state.musicPath, state.fragShaderPath, PATH_SIZE, &state.fullscreen))
+		return 0;
+
 	if(!initWindow(state.winWidth, state.winHeight)) return -1;
 	loop();
 	deinitApp();

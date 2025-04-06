@@ -1,6 +1,6 @@
 .PHONY: clean
 
-src := src/main.c src/fs.c src/glad.c src/shader.c
+src := src/main.c src/opts.c src/fs.c src/glad.c src/shader.c
 libs := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl
 cc := gcc
 target := fv
