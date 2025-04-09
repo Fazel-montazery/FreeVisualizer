@@ -1,12 +1,14 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <signal.h>
 
 #include "../include/glad/glad.h"
 #include <GLFW/glfw3.h>
 
 #include "defs.h"
 #include "opts.h"
+#include "shader.h"
 
 // App State
 static struct
@@ -24,23 +26,31 @@ static struct
 
 	// Shaders
 	char fragShaderPath[PATH_SIZE];
+	GLuint vertShader;
+	GLuint fragShader;
+	GLuint shaderProgram;
 
 } state = DEFAULT_STATE;
 
 // Blueprints
 static bool initWindow(int32_t width, int32_t height);
+static bool initShaders(const char* fragShaderPath);
 static void loop(void);
-static void deinitApp(void);
+static void deinitApp(int sig);
 
 // Main
 int main(int argc, char** argv)
 {
+	// Setting up the Ctrl+C signal
+	signal(SIGINT, deinitApp);
+
 	if (!parseOpts(argc, argv, &state.musicPath, state.fragShaderPath, PATH_SIZE, &state.fullscreen))
 		return 0;
 
-	if(!initWindow(state.winWidth, state.winHeight)) return -1;
+	if (!initWindow(state.winWidth, state.winHeight)) return -1;
+	if (!initShaders(state.fragShaderPath)) return -1;
 	loop();
-	deinitApp();
+	deinitApp(0);
 	return 0;
 }
 
@@ -127,22 +137,28 @@ static bool initWindow(int32_t width, int32_t height)
 	glfwWindowHint(GLFW_REFRESH_RATE, GLFW_DONT_CARE);
 	glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 	glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
-	
-
-	state.window = glfwCreateWindow(width, height, "FreeVisualizer", NULL, NULL);
-	if (!state.window)
-		return false;
 
 	GLFWmonitor* primary = glfwGetPrimaryMonitor();
 	if (!primary)
 		return false;
 
+	int xpos, ypos;
 	const GLFWvidmode* mode = glfwGetVideoMode(primary);
 	if (mode) {
-		int xpos = (mode->width - state.winWidth) / 2;
-		int ypos = (mode->height - state.winHeight) / 2;
-		glfwSetWindowPos(state.window, xpos, ypos);
+		xpos = (mode->width - state.winWidth) / 2;
+		ypos = (mode->height - state.winHeight) / 2;
+		glfwWindowHint(GLFW_RED_BITS, mode->redBits);
+		glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
+		glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
+		glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
         }
+
+
+	state.window = glfwCreateWindow(width, height, "FreeVisualizer", (state.fullscreen) ? primary : NULL, NULL);
+	if (!state.window)
+		return false;
+
+	if (mode) glfwSetWindowPos(state.window, xpos, ypos);
 
 	glfwMakeContextCurrent(state.window);
 	glfwSetFramebufferSizeCallback(state.window, glfw_framebuffer_size_callback);
@@ -161,13 +177,53 @@ static bool initWindow(int32_t width, int32_t height)
 	return true;
 }
 
+// Load and compile glsl shaders (for fragment shader it uses the path at state.fragShaderPath)
+static bool initShaders(const char* fragShaderPath)
+{
+	// From: https://stackoverflow.com/a/59739538 this beautiful answer by derhass
+	const char *vertexShaderSource = "#version 330 core\n"
+		"out vec2 texcoords;\n"
+		"void main()\n"
+		"{\n"
+		"vec2 vertices[3]=vec2[3](vec2(-1,-1), vec2(3,-1), vec2(-1, 3));\n"
+		"gl_Position = vec4(vertices[gl_VertexID],0,1);\n"
+		"texcoords = 0.5 * gl_Position.xy + vec2(0.5);\n"
+		"}\0";
+
+	if (!createShaderFromSrc(vertexShaderSource, &state.vertShader, GL_VERTEX_SHADER))
+		return false;
+
+	if (!createShaderFromPath(fragShaderPath, &state.fragShader, GL_FRAGMENT_SHADER)) {
+		glDeleteShader(state.vertShader);
+		return false;
+	}
+
+	if (!createProgrm(state.vertShader, state.fragShader, &state.shaderProgram)) {
+		glDeleteShader(state.vertShader);
+		glDeleteShader(state.fragShader);
+		return false;
+	}
+
+	glDeleteShader(state.vertShader);
+	glDeleteShader(state.fragShader);
+
+	return true;
+}
+
 // Main drawing loop
 static void loop(void)
 {
+	GLuint dummyVAO; 
+	glGenVertexArrays(1, &dummyVAO);
+	glBindVertexArray(dummyVAO);
+
 	while (!glfwWindowShouldClose(state.window))
 	{
-		glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
+
+		glUseProgram(state.shaderProgram);
+		glDrawArrays(GL_TRIANGLES, 0, 3);
 
 		glfwSwapBuffers(state.window);
 		glfwPollEvents();
@@ -175,8 +231,12 @@ static void loop(void)
 }
 
 // Release all resources
-static void deinitApp(void)
+static void deinitApp(int sig)
 {
+	glDeleteProgram(state.shaderProgram);
 	glfwDestroyWindow(state.window);
 	glfwTerminate();
+	// Show terminal cursor (if hidden)
+	printf("\033[?25h");
+	fflush(stdout);
 }

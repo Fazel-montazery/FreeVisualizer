@@ -1,6 +1,6 @@
 #include "shader.h"
 
-char* loadShaderSrc(const char* path)
+static char* loadShaderSrc(const char* path)
 {
 	if (!path) {
 		fprintf(stderr, "Path is NULL\n");
@@ -42,12 +42,12 @@ char* loadShaderSrc(const char* path)
 	return buffer;
 }
 
-void unLoadShaderSrc(char* str)
+static void unLoadShaderSrc(char* str)
 {
 	if (str) free(str);
 }
 
-bool compileShader(GLuint shader)
+static bool compileShader(GLuint shader)
 {
 	glCompileShader(shader);
 	int  success;
@@ -61,20 +61,31 @@ bool compileShader(GLuint shader)
 	return true;
 }
 
-bool createShader(const char* path, GLuint* shader_id, GLenum shader_type)
+bool createShaderFromPath(const char* path, GLuint* shader_id, GLenum shader_type)
 {
-	const char* vertexShaderSrc = loadShaderSrc(path);
-	if (!vertexShaderSrc) {
+	const char* shaderSrc = loadShaderSrc(path);
+	if (!shaderSrc) {
 		return false;
 	}
 	*shader_id = glCreateShader(shader_type);
-	glShaderSource(*shader_id, 1, &vertexShaderSrc, NULL);
-	unLoadShaderSrc((char*)vertexShaderSrc);
+	glShaderSource(*shader_id, 1, &shaderSrc, NULL);
+	unLoadShaderSrc((char*)shaderSrc);
 	if(!compileShader(*shader_id)) {
 		return false;
 	}
 	return true;
 }
+
+bool createShaderFromSrc(const char* src, GLuint* shader_id, GLenum shader_type)
+{
+	*shader_id = glCreateShader(shader_type);
+	glShaderSource(*shader_id, 1, &src, NULL);
+	if(!compileShader(*shader_id)) {
+		return false;
+	}
+	return true;
+}
+
 
 bool createProgrm(GLuint vertexShader, GLuint fragmentShader, GLuint* program_id)
 {
