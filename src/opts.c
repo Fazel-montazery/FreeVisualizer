@@ -25,7 +25,7 @@ static void* loading(void *data)
 		fputc(loadingChars[loadingCharIndx % 3], stdout);
 		fputc('\r', stdout);
 		fflush(stdout);
-		sleep(0.5);
+		sleep(1);
 		loadingCharIndx++;
 	}
 	return NULL;
@@ -46,8 +46,9 @@ bool parseOpts( int argc,
 	}
 
 	char shaderDir[PATH_SIZE] = { 0 };
-	if (!createDirInHome(home, SHADER_DIR, shaderDir, PATH_SIZE)) {
-		fprintf(stderr, "Couldn't retrive/create shaders directory: %s\n", strerror(errno));
+	snprintf(shaderDir, PATH_SIZE, "%s/%s/%s", home, DATA_DIR, SHADER_DIR);
+	if (!dirExists(shaderDir)) {
+		fprintf(stderr, "Couldn't retrive shader directory: %s\n", shaderDir);
 		return false;
 	}
 
@@ -101,6 +102,10 @@ bool parseOpts( int argc,
 			return false;
 
 		case 'S':
+			// Hide terminal cursor
+			printf("\033[?25l");
+			fflush(stdout);
+
 			pthread_t loadingThread;
 			pthread_create(&loadingThread, NULL, loading, NULL);
 
@@ -113,6 +118,10 @@ bool parseOpts( int argc,
 
 			loading_should_exit = true;
 			pthread_join(loadingThread, NULL);
+			
+			// Show terminal cursor
+			printf("\033[?25h");
+			fflush(stdout);
 			return false;
 
 		case 'd':
@@ -137,9 +146,18 @@ bool parseOpts( int argc,
 		}
 	}
 
+	if (optind < argc) {
+		*musicPath = argv[optind];
+	} else {
+		printf("Usage: %s [OPTIONS] <mp3 file>\n"
+			"run '%s -h' for help\n", argv[0], argv[0]);
+		return false;
+	}
+
 	if (!sceneSet) {
 		char sceneName[PATH_SIZE / 4];
 		if (!pickRandFile(shaderDir, sceneName, PATH_SIZE / 4)) {
+			fprintf(stderr, "No scene found!\n");
 			return false;
 		}
 		snprintf(fragShaderPathBuf, PATH_SIZE, "%s/%s", shaderDir, sceneName);

@@ -15,9 +15,8 @@
 // Returns the home directory of the current user otherwise returns NULL
 const char* getHomeDir();
 
-// Create the (dirName) directory in Home if It doesn't exsit otherwise just puts the full path into dest
-// returns ture if successful else false
-bool createDirInHome(const char* homeDir, const char* dirName, char dest[], size_t destsiz);
+// Returns true if the directory at the path exist otherwise false
+bool dirExists(const char* path);
 
 // Prints out all the regulat file names in a directory (widthout extention)
 // returns ture if successful else false

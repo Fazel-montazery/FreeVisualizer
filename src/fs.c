@@ -11,35 +11,17 @@ const char* getHomeDir()
 	return home;
 }
 
-static bool _createDirInHome(const char* homeDir, const char* dirName, char dest[], size_t destsiz, int i)
+bool dirExists(const char* path)
 {
-	if (i == 2) {
+	struct stat s;
+	if (stat(path, &s) == 0) {
+		if (S_ISDIR(s.st_mode))
+			return true;
+
+		return false;
+	} else {
 		return false;
 	}
-
-	snprintf(dest, destsiz, "%s/%s", homeDir, dirName);
-	struct stat st;
-	if (stat(dest, &st) == 0) {
-		if (S_ISDIR(st.st_mode)) {
-			return true;
-		} else {
-			remove(dest);
-			_createDirInHome(homeDir, dirName, dest, destsiz, i + 1);
-		}
-	} else {
-		if (mkdir(dest, 0777) == 0) {
-			return true;
-		} else {
-			_createDirInHome(homeDir, dirName, dest, destsiz, i + 1);
-		}
-	}
-
-	return false;
-}
-
-bool createDirInHome(const char* homeDir, const char* dirName, char dest[], size_t destsiz)
-{
-	return _createDirInHome(homeDir, dirName, dest, destsiz, 0);
 }
 
 bool printFilesInDir(const char* dirPath)
@@ -106,7 +88,6 @@ bool pickRandFile(const char* dirPath, char dest[], size_t destsiz)
 			snprintf(dest, destsiz, "%s", dir->d_name);
 		}
 		closedir(d);
-		fprintf(stderr, "No scene found!\n");
 		return false;
 	} else {
 		fprintf(stderr, "Couldn't open directory: %s\n", dirPath);
