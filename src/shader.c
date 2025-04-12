@@ -9,14 +9,14 @@ static char* loadShaderSrc(const char* path)
 
 	FILE *file = fopen(path, "r");
 	if (!file) {
-		fprintf(stderr, "Failed to open file: [%s]\n", path);
+		fprintf(stderr, "Failed to open file: %s [%s]\n", path, strerror(errno));
 		return NULL;
 	}
 
 	fseek(file, 0, SEEK_END);
 	long length = ftell(file);
 	if (length < 0) {
-		fprintf(stderr, "Failed to determine the length of the file: [%s]\n", path);
+		fprintf(stderr, "Failed to determine the length of the file: %s [%s]\n", path, strerror(errno));
 		fclose(file);
 		return NULL;
 	}
@@ -24,14 +24,14 @@ static char* loadShaderSrc(const char* path)
 
 	char* buffer = malloc(length + 1);
 	if (!buffer) {
-		fprintf(stderr, "Failed to allocate memory for ShaderSrc: [%s]\n", path);
+		fprintf(stderr, "Failed to allocate memory for ShaderSrc: %s [%s]\n", path, strerror(errno));
 		fclose(file);
 		return NULL;
 	}
 
 	size_t read_length = fread(buffer, 1, length, file);
 	if (read_length != length) {
-		fprintf(stderr, "Failed to read the entire file: [%s]\n", path);
+		fprintf(stderr, "Failed to read the entire file: %s [%s]\n", path, strerror(errno));
 		fclose(file);
 		free(buffer);
 		return NULL;
@@ -47,7 +47,7 @@ static void unLoadShaderSrc(char* str)
 	if (str) free(str);
 }
 
-static bool compileShader(GLuint shader)
+static bool compileShader(const GLuint shader)
 {
 	glCompileShader(shader);
 	int  success;
@@ -61,33 +61,33 @@ static bool compileShader(GLuint shader)
 	return true;
 }
 
-bool createShaderFromPath(const char* path, GLuint* shader_id, GLenum shader_type)
+bool createShaderFromPath(const char* path, GLuint* shader_id, const GLenum shader_type)
 {
 	const char* shaderSrc = loadShaderSrc(path);
-	if (!shaderSrc) {
+	if (!shaderSrc)
 		return false;
-	}
+
 	*shader_id = glCreateShader(shader_type);
 	glShaderSource(*shader_id, 1, &shaderSrc, NULL);
 	unLoadShaderSrc((char*)shaderSrc);
-	if(!compileShader(*shader_id)) {
+	if(!compileShader(*shader_id))
 		return false;
-	}
+
 	return true;
 }
 
-bool createShaderFromSrc(const char* src, GLuint* shader_id, GLenum shader_type)
+bool createShaderFromSrc(const char* src, GLuint* shader_id, const GLenum shader_type)
 {
 	*shader_id = glCreateShader(shader_type);
 	glShaderSource(*shader_id, 1, &src, NULL);
-	if(!compileShader(*shader_id)) {
+	if(!compileShader(*shader_id))
 		return false;
-	}
+
 	return true;
 }
 
 
-bool createProgrm(GLuint vertexShader, GLuint fragmentShader, GLuint* program_id)
+bool createProgrm(const GLuint vertexShader, const GLuint fragmentShader, GLuint* program_id)
 {
 	GLuint id = glCreateProgram();
 	if (id == 0) return false;

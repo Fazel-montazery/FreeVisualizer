@@ -39,18 +39,14 @@ bool parseOpts( int argc,
 		bool* fullscreen
 )
 {
-	const char* home = getHomeDir();
-	if (!home) {
-		fprintf(stderr, "Couldn't retrive home directory: %s\n", strerror(errno));
+	const char* home = getHomeDir(true);
+	if (!home)
 		return false;
-	}
 
 	char shaderDir[PATH_SIZE] = { 0 };
 	snprintf(shaderDir, PATH_SIZE, "%s/%s/%s", home, DATA_DIR, SHADER_DIR);
-	if (!dirExists(shaderDir)) {
-		fprintf(stderr, "Couldn't retrive shader directory: %s\n", shaderDir);
+	if (!dirExists(shaderDir, true))
 		return false;
-	}
 
 	bool sceneSet = false;
 	int opt;
@@ -78,11 +74,11 @@ bool parseOpts( int argc,
 			char scenePath[PATH_SIZE] = { 0 };
 			snprintf(scenePath, PATH_SIZE, "%s/%s%s", shaderDir, optarg, SHADER_EXT);
 
-			if (!fileExists(scenePath)) {
+			if (!fileExists(scenePath, false)) {
 				printf("Scene Doesn't exist!\n"
 					"Available scenes:\n");
 
-				if (!printFilesInDir(shaderDir)) {
+				if (!printFilesInDir(shaderDir, false)) {
 					printf("Couldn't list scenes: %s\n", strerror(errno));
 					return false;
 				}
@@ -95,10 +91,7 @@ bool parseOpts( int argc,
 			break;
 
 		case 'l':
-			if (!printFilesInDir(shaderDir)) {
-				printf("Couldn't list scenes: %s\n", strerror(errno));
-				return false;
-			}
+			printFilesInDir(shaderDir, true);
 			return false;
 
 		case 'S':
@@ -156,7 +149,7 @@ bool parseOpts( int argc,
 
 	if (!sceneSet) {
 		char sceneName[PATH_SIZE / 4];
-		if (!pickRandFile(shaderDir, sceneName, PATH_SIZE / 4)) {
+		if (!pickRandFile(shaderDir, sceneName, PATH_SIZE / 4, false)) {
 			fprintf(stderr, "No scene found!\n");
 			return false;
 		}

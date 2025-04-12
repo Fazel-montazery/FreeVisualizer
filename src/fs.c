@@ -1,30 +1,39 @@
 #include "fs.h"
 
-const char* getHomeDir()
+const char* getHomeDir(const bool verbose)
 {
 	const char* home = getenv("HOME");
 	if (!home) {
 		struct passwd* pw = getpwuid(getuid());
-		if (!pw) return NULL;
+		if (!pw) {
+			if (verbose)
+				fprintf(stderr, "Couldn't retrive home directory: [%s]\n", strerror(errno));
+			return NULL;
+		}
 		home = pw->pw_dir;
 	}
 	return home;
 }
 
-bool dirExists(const char* path)
+bool dirExists(const char* path, const bool verbose)
 {
 	struct stat s;
 	if (stat(path, &s) == 0) {
 		if (S_ISDIR(s.st_mode))
 			return true;
 
-		return false;
+		goto err;
 	} else {
-		return false;
+		goto err;
 	}
+
+err:
+	if (verbose)
+		fprintf(stderr, "Couldn't retrive directory: %s [%s]\n", path, strerror(errno));
+	return false;
 }
 
-bool printFilesInDir(const char* dirPath)
+bool printFilesInDir(const char* dirPath, const bool verbose)
 {
 	DIR *d;
 	struct dirent *dir;
@@ -46,25 +55,32 @@ bool printFilesInDir(const char* dirPath)
 		closedir(d);
 		return true;
 	} else {
-		fprintf(stderr, "Couldn't open directory: %s\n", dirPath);
+		if (verbose)
+			fprintf(stderr, "Couldn't print directory: %s [%s]\n", dirPath, strerror(errno));
 		return false;
 	}
 }
 
-bool fileExists(const char* path)
+bool fileExists(const char* path, const bool verbose)
 {
 	struct stat s;
 	if (stat(path, &s) == 0) {
 		if (S_ISREG(s.st_mode))
 			return true;
 
-		return false;
+		goto err;
 	} else {
-		return false;
+		goto err;
 	}
+
+err:
+	if (verbose)
+		fprintf(stderr, "Couldn't retrive file: %s [%s]\n", path, strerror(errno));
+
+	return false;
 }
 
-bool pickRandFile(const char* dirPath, char dest[], size_t destsiz)
+bool pickRandFile(const char* dirPath, char dest[], const size_t destsiz, const bool verbose)
 {
 	DIR *d;
 	struct dirent *dir;
@@ -86,12 +102,18 @@ bool pickRandFile(const char* dirPath, char dest[], size_t destsiz)
 		rewinddir(d);
 		if ((dir = readdir(d))) {
 			snprintf(dest, destsiz, "%s", dir->d_name);
+			return true;
 		}
 		closedir(d);
-		return false;
+
+		goto err;
 	} else {
-		fprintf(stderr, "Couldn't open directory: %s\n", dirPath);
-		return false;
+		goto err;
 	}
 
+err:
+	if (verbose)
+		fprintf(stderr, "Couldn't retrive directory: %s [%s]\n", dirPath, strerror(errno));
+
+	return false;
 }

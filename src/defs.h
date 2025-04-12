@@ -5,12 +5,5 @@
 #define SHADER_DIR "shaders"
 #define SHADER_EXT ".glsl"
 
-#define DEFAULT_STATE			\
-	{				\
-		.window	= NULL,		\
-		.winWidth = 1000,	\
-		.winHeight = 1000,	\
-		.winPosX = 0,		\
-		.winPosY = 0,		\
-		.fullscreen = false,	\
-	}
+#define DEFAULT_WIN_WIDTH 1000
+#define DEFAULT_WIN_HEIGHT 1000

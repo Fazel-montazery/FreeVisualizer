@@ -11,7 +11,7 @@
 #include "shader.h"
 
 // App State
-static struct
+typedef struct
 {
 	// Window
 	GLFWwindow* window;
@@ -25,32 +25,36 @@ static struct
 	char* musicPath;
 
 	// Shaders
-	char fragShaderPath[PATH_SIZE];
 	GLuint vertShader;
 	GLuint fragShader;
 	GLuint shaderProgram;
 
-} state = DEFAULT_STATE;
+} State;
 
 // Blueprints
-static bool initWindow(int32_t width, int32_t height);
-static bool initShaders(const char* fragShaderPath);
-static void loop(void);
-static void deinitApp(int sig);
+static bool initWindow(State* state, const int32_t width, const int32_t height);
+static bool initShaders(State* state, const char* fragShaderPath);
+static void loop(const State state); // Loop gets the state by value because it will access them in a loop
+static void deinitApp(State* state);
+static void catchCtrlC(int sig);
 
 // Main
 int main(int argc, char** argv)
 {
-	// Setting up the Ctrl+C signal
-	signal(SIGINT, deinitApp);
+	// Initializing the app state
+	State state = { 0 };
 
-	if (!parseOpts(argc, argv, &state.musicPath, state.fragShaderPath, PATH_SIZE, &state.fullscreen))
+	// Setting up the Ctrl+C signal
+	signal(SIGINT, catchCtrlC);
+
+	char fragShaderPath[PATH_SIZE];
+	if (!parseOpts(argc, argv, &state.musicPath, fragShaderPath, PATH_SIZE, &state.fullscreen))
 		return 0;
 
-	if (!initWindow(state.winWidth, state.winHeight)) return -1;
-	if (!initShaders(state.fragShaderPath)) return -1;
-	loop();
-	deinitApp(0);
+	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
+	if (!initShaders(&state, fragShaderPath)) return -1;
+	loop(state);
+	deinitApp(&state);
 	return 0;
 }
 
@@ -64,23 +68,28 @@ static void glfw_error_callback(int error, const char* description)
 
 static void glfw_framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
+	State* state = glfwGetWindowUserPointer(window);
+
 	glViewport(0, 0, width, height);
-	if (!state.fullscreen) {
-		state.winWidth = width;
-		state.winHeight = height;
+	if (!state->fullscreen) {
+		state->winWidth = width;
+		state->winHeight = height;
 	}
 }
 
 static void glfwWindowPosCallback(GLFWwindow* window, int xpos, int ypos) 
 {
-	if (!state.fullscreen) {
-		state.winPosX = xpos;
-		state.winPosY = ypos;
+	State* state = glfwGetWindowUserPointer(window);
+	if (!state->fullscreen) {
+		state->winPosX = xpos;
+		state->winPosY = ypos;
 	}
 }
 
 static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
+	State* state = glfwGetWindowUserPointer(window);
+
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
 	}
@@ -92,24 +101,24 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 		if (!primary) return;
 		const GLFWvidmode* mode = glfwGetVideoMode(primary);
 		if (!mode) return;
-		if (state.fullscreen) {
-			glfwSetWindowMonitor(state.window, NULL, state.winPosX, state.winPosY,
-					state.winWidth,
-					state.winHeight,
+		if (state->fullscreen) {
+			glfwSetWindowMonitor(state->window, NULL, state->winPosX, state->winPosY,
+					state->winWidth,
+					state->winHeight,
 					0);
-			state.fullscreen = false;
+			state->fullscreen = false;
 		} else {
-			glfwSetWindowMonitor(state.window, primary, 0, 0,
+			glfwSetWindowMonitor(state->window, primary, 0, 0,
 					mode->width,
 					mode->height,
 					mode->refreshRate);
-			state.fullscreen = true;
+			state->fullscreen = true;
 		}
 	}
 }
 
 // Initialize the window for opengl
-static bool initWindow(int32_t width, int32_t height)
+static bool initWindow(State* state, const int32_t width, const int32_t height)
 {
 #ifndef NDEBUG
 	glfwSetErrorCallback(glfw_error_callback);
@@ -145,40 +154,42 @@ static bool initWindow(int32_t width, int32_t height)
 	int xpos, ypos;
 	const GLFWvidmode* mode = glfwGetVideoMode(primary);
 	if (mode) {
-		xpos = (mode->width - state.winWidth) / 2;
-		ypos = (mode->height - state.winHeight) / 2;
+		xpos = (mode->width - width) / 2;
+		ypos = (mode->height - height) / 2;
 		glfwWindowHint(GLFW_RED_BITS, mode->redBits);
 		glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
 		glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
 		glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
         }
 
-
-	state.window = glfwCreateWindow(width, height, "FreeVisualizer", (state.fullscreen) ? primary : NULL, NULL);
-	if (!state.window)
+	state->window = glfwCreateWindow(width, height, "FreeVisualizer", (state->fullscreen) ? primary : NULL, NULL);
+	if (!state->window)
 		return false;
 
-	if (mode) glfwSetWindowPos(state.window, xpos, ypos);
+	// Set the internal WindowPointer for glfw to access states in callback functions
+	glfwSetWindowUserPointer(state->window, state);
 
-	glfwMakeContextCurrent(state.window);
-	glfwSetFramebufferSizeCallback(state.window, glfw_framebuffer_size_callback);
-	glfwSetWindowPosCallback(state.window, glfwWindowPosCallback);
-	glfwSetKeyCallback(state.window, glfw_key_callback);
+	if (mode) glfwSetWindowPos(state->window, xpos, ypos);
+
+	glfwMakeContextCurrent(state->window);
+	glfwSetFramebufferSizeCallback(state->window, glfw_framebuffer_size_callback);
+	glfwSetWindowPosCallback(state->window, glfwWindowPosCallback);
+	glfwSetKeyCallback(state->window, glfw_key_callback);
 
 	// setting v-sync
 	glfwSwapInterval(1);
 
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
-		fprintf(stderr, "Failed to initialize GLAD\n");
+		fprintf(stderr, "Failed to initialize GLAD!\n");
 		return false;
 	}
 
 	return true;
 }
 
-// Load and compile glsl shaders (for fragment shader it uses the path at state.fragShaderPath)
-static bool initShaders(const char* fragShaderPath)
+// Load and compile glsl shaders
+static bool initShaders(State* state, const char* fragShaderPath)
 {
 	// From: https://stackoverflow.com/a/59739538 this beautiful answer by derhass
 	const char *vertexShaderSource = "#version 330 core\n"
@@ -190,28 +201,28 @@ static bool initShaders(const char* fragShaderPath)
 		"texcoords = 0.5 * gl_Position.xy + vec2(0.5);\n"
 		"}\0";
 
-	if (!createShaderFromSrc(vertexShaderSource, &state.vertShader, GL_VERTEX_SHADER))
+	if (!createShaderFromSrc(vertexShaderSource, &state->vertShader, GL_VERTEX_SHADER))
 		return false;
 
-	if (!createShaderFromPath(fragShaderPath, &state.fragShader, GL_FRAGMENT_SHADER)) {
-		glDeleteShader(state.vertShader);
-		return false;
-	}
-
-	if (!createProgrm(state.vertShader, state.fragShader, &state.shaderProgram)) {
-		glDeleteShader(state.vertShader);
-		glDeleteShader(state.fragShader);
+	if (!createShaderFromPath(fragShaderPath, &state->fragShader, GL_FRAGMENT_SHADER)) {
+		glDeleteShader(state->vertShader);
 		return false;
 	}
 
-	glDeleteShader(state.vertShader);
-	glDeleteShader(state.fragShader);
+	if (!createProgrm(state->vertShader, state->fragShader, &state->shaderProgram)) {
+		glDeleteShader(state->vertShader);
+		glDeleteShader(state->fragShader);
+		return false;
+	}
+
+	glDeleteShader(state->vertShader);
+	glDeleteShader(state->fragShader);
 
 	return true;
 }
 
 // Main drawing loop
-static void loop(void)
+static void loop(const State state)
 {
 	GLuint dummyVAO; 
 	glGenVertexArrays(1, &dummyVAO);
@@ -231,11 +242,19 @@ static void loop(void)
 }
 
 // Release all resources
-static void deinitApp(int sig)
+static void deinitApp(State* state)
 {
-	glDeleteProgram(state.shaderProgram);
-	glfwDestroyWindow(state.window);
+	glDeleteProgram(state->shaderProgram);
+	glfwDestroyWindow(state->window);
 	glfwTerminate();
+	// Show terminal cursor (if hidden)
+	printf("\033[?25h");
+	fflush(stdout);
+}
+
+// Callback function for Ctrl+C
+static void catchCtrlC(int sig)
+{
 	// Show terminal cursor (if hidden)
 	printf("\033[?25h");
 	fflush(stdout);
