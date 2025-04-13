@@ -120,6 +120,9 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 // Initialize the window for opengl
 static bool initWindow(State* state, const int32_t width, const int32_t height)
 {
+	state->winWidth = width;
+	state->winHeight = height;
+
 #ifndef NDEBUG
 	glfwSetErrorCallback(glfw_error_callback);
 #endif
@@ -160,16 +163,24 @@ static bool initWindow(State* state, const int32_t width, const int32_t height)
 		glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
 		glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
 		glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
-        }
+        } else {
+		state->fullscreen = false;
+	}
 
-	state->window = glfwCreateWindow(width, height, "FreeVisualizer", (state->fullscreen) ? primary : NULL, NULL);
+	if (state->fullscreen) {
+		state->window = glfwCreateWindow(mode->width, mode->height, "FreeVisualizer", primary, NULL);
+	} else {
+		state->window = glfwCreateWindow(width, height, "FreeVisualizer", NULL, NULL);
+	}
+
 	if (!state->window)
 		return false;
 
 	// Set the internal WindowPointer for glfw to access states in callback functions
 	glfwSetWindowUserPointer(state->window, state);
 
-	if (mode) glfwSetWindowPos(state->window, xpos, ypos);
+	if (mode)
+		glfwSetWindowPos(state->window, xpos, ypos);
 
 	glfwMakeContextCurrent(state->window);
 	glfwSetFramebufferSizeCallback(state->window, glfw_framebuffer_size_callback);
