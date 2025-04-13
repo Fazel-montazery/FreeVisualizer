@@ -99,13 +99,21 @@ bool pickRandFile(const char* dirPath, char dest[], const size_t destsiz, const 
 				}
 			}
 		}
-		rewinddir(d);
-		if ((dir = readdir(d))) {
-			snprintf(dest, destsiz, "%s", dir->d_name);
-			return true;
-		}
-		closedir(d);
 
+		rewinddir(d);
+		
+		while ((dir = readdir(d))) {
+			if (dir->d_name[0] == '.')
+				continue;
+
+			if (dir->d_type == DT_REG) {
+				snprintf(dest, destsiz, "%s", dir->d_name);
+				closedir(d);
+				return true;
+			}
+		}
+
+		closedir(d);
 		goto err;
 	} else {
 		goto err;
