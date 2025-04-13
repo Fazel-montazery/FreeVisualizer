@@ -1,19 +1,37 @@
-.PHONY: clean
+.PHONY: install uninstall clean
 
-src := src/main.c src/opts.c src/fs.c src/glad.c src/shader.c
-libs := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl
-cc := gcc
-target := fv
-flags-release := -std=c99 -Wall -O2 -DNDEBUG
-flags-debug := -std=c99 -Wall -O0 -g3 -fsanitize=address
+INSDIR ?= /usr/local
+BINDIR = ${INSDIR}/bin
+USR_HOME ?= $(shell getent passwd $(SUDO_USER) | cut -d: -f6)
+DATADIR ?= ${USR_HOME}/.FreeVisualizer
+SHADERDIR := ${DATADIR}/shaders
+SHADERS := shaders/*
+
+SRC := src/main.c src/opts.c src/fs.c src/glad.c src/shader.c
+LIBS := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl
+CC := gcc
+TARGET := fv
+FLAGS_RELEASE := -std=c99 -Wall -O2 -DNDEBUG
+FLAGS_DEBUG := -std=c99 -Wall -O0 -g3 -fsanitize=address
 
 all: main
 
-main: ${src}
-	${cc} -o ${target} ${src} ${libs} ${flags-release}
+main: ${SRC}
+	${CC} -o ${TARGET} ${SRC} ${LIBS} ${FLAGS_RELEASE}
 
-debug: ${src}
-	${cc} -o ${target} ${src} ${libs} ${flags-debug}
+debug: ${SRC}
+	${CC} -o ${TARGET} ${SRC} ${LIBS} ${FLAGS_DEBUG}
+
+install: ${TARGET}
+	install -d ${BINDIR}
+	install -m 755 ${TARGET} ${BINDIR}/${TARGET}
+	rm -rf ${SHADERDIR}
+	install -d ${SHADERDIR}
+	install -m 644  ${SHADERS} ${SHADERDIR}/
+
+uninstall:
+	rm -f ${BINDIR}/${TARGET}
+	rm -rf ${DATADIR}
 
 clean:
-	rm ${target}
+	rm ${TARGET}
