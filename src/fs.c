@@ -86,13 +86,13 @@ bool pickRandFile(const char* dirPath, char dest[], const size_t destsiz, const 
 	struct dirent *dir;
 	d = opendir(dirPath);
 	if (d) {
+		srand(time(NULL));
 		while ((dir = readdir(d))) {
 			if (dir->d_name[0] == '.')
 				continue;
 
 			if (dir->d_type == DT_REG) {
-				srand(time(NULL));
-				if (rand() % 2) {
+				if (rand() % 2 == 1) {
 					snprintf(dest, destsiz, "%s", dir->d_name);
 					closedir(d);
 					return true;

@@ -15,8 +15,8 @@ typedef struct
 {
 	// Window
 	GLFWwindow* window;
-	int32_t winWidth;
-	int32_t winHeight;
+	int32_t winWidth; // not in fullscreen mode
+	int32_t winHeight; // not in fullscreen mode
 	int32_t winPosX;
 	int32_t winPosY;
 	bool fullscreen;
@@ -28,13 +28,18 @@ typedef struct
 	GLuint vertShader;
 	GLuint fragShader;
 	GLuint shaderProgram;
+	GLint uniformLocResolution;
+	GLint uniformLocMouse;
+	GLint uniformLocTime;
+	GLint uniformLocPeakAmp;
+	GLint uniformLocAvgAmp;
 
 } State;
 
 // Blueprints
 static bool initWindow(State* state, const int32_t width, const int32_t height);
 static bool initShaders(State* state, const char* fragShaderPath);
-static void loop(const State state); // Loop gets the state by value because it will access them in a loop
+static void loop(const State state);
 static void deinitApp(State* state);
 static void catchCtrlC(int sig);
 
@@ -204,12 +209,10 @@ static bool initShaders(State* state, const char* fragShaderPath)
 {
 	// From: https://stackoverflow.com/a/59739538 this beautiful answer by derhass
 	const char *vertexShaderSource = "#version 330 core\n"
-		"out vec2 texcoords;\n"
 		"void main()\n"
 		"{\n"
 		"vec2 vertices[3]=vec2[3](vec2(-1,-1), vec2(3,-1), vec2(-1, 3));\n"
 		"gl_Position = vec4(vertices[gl_VertexID],0,1);\n"
-		"texcoords = 0.5 * gl_Position.xy + vec2(0.5);\n"
 		"}\0";
 
 	if (!createShaderFromSrc(vertexShaderSource, &state->vertShader, GL_VERTEX_SHADER))
@@ -229,6 +232,13 @@ static bool initShaders(State* state, const char* fragShaderPath)
 	glDeleteShader(state->vertShader);
 	glDeleteShader(state->fragShader);
 
+	// Retriving uniform locations
+	state->uniformLocResolution = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_RESOLUTION);
+	state->uniformLocMouse = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_MOUSE);
+	state->uniformLocTime = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_TIME);
+	state->uniformLocPeakAmp = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_PEAKAMP);
+	state->uniformLocAvgAmp = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_AVGAMP);
+
 	return true;
 }
 
@@ -244,6 +254,19 @@ static void loop(const State state)
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
+		// Retriving Resolution and mouse pos
+		int fbWidth, fbHeight;
+		glfwGetFramebufferSize(state.window, &fbWidth, &fbHeight);
+
+		double mouseXpos, mouseYpos;
+		glfwGetCursorPos(state.window, &mouseXpos, &mouseYpos);
+
+		// Uploading uniforms
+		glUniform2ui(state.uniformLocResolution, fbWidth, fbHeight);
+		glUniform2f(state.uniformLocMouse, mouseXpos, mouseYpos);
+		glUniform1f(state.uniformLocTime, glfwGetTime());
+
+		// Drawing
 		glUseProgram(state.shaderProgram);
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 

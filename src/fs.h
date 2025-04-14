@@ -26,6 +26,6 @@ bool printFilesInDir(const char* dirPath, const bool verbose);
 // Returns true if file at the path exist otherwise false
 bool fileExists(const char* path, const bool verbose);
 
-// Pick a random file in the (dirPath) dirctory and put into dest
+// Pick a random file (non-uniform) in the (dirPath) dirctory and put into dest
 // returns ture if successful else false
 bool pickRandFile(const char* dirPath, char dest[], const size_t destsiz, const bool verbose);
