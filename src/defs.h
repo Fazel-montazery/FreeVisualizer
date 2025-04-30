@@ -1,5 +1,7 @@
 #pragma once
 
+#define PCM_DEVICE "default"
+
 #define PATH_SIZE 1024
 #define DATA_DIR ".FreeVisualizer"
 #define SHADER_DIR "shaders"

@@ -11,8 +11,6 @@
 #include <dirent.h>
 #include <errno.h>
 
-#define DT_REG 8
-
 // Returns the home directory of the current user otherwise returns NULL
 const char* getHomeDir(const bool verbose);
 

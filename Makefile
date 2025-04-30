@@ -8,11 +8,11 @@ SHADERDIR := ${DATADIR}/shaders
 SHADERS := shaders/*
 
 SRC := src/main.c src/opts.c src/fs.c src/glad.c src/shader.c
-LIBS := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl
+LIBS := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl -lasound
 CC := gcc
 TARGET := fv
-FLAGS_RELEASE := -std=c99 -Wall -O2 -DNDEBUG
-FLAGS_DEBUG := -std=c99 -Wall -O0 -g3 -fsanitize=address
+FLAGS_RELEASE := -Wall -O2 -DNDEBUG
+FLAGS_DEBUG := -Wall -O0 -g3 -fsanitize=address
 
 all: main
 

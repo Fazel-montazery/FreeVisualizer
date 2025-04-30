@@ -6,6 +6,8 @@
 #include "../include/glad/glad.h"
 #include <GLFW/glfw3.h>
 
+#include <alsa/asoundlib.h>
+
 #include "defs.h"
 #include "opts.h"
 #include "shader.h"
@@ -23,6 +25,7 @@ typedef struct
 
 	// Music
 	char* musicPath;
+	snd_pcm_t *pcm_handle;
 
 	// Shaders
 	GLuint vertShader;
@@ -39,6 +42,7 @@ typedef struct
 // Blueprints
 static bool initWindow(State* state, const int32_t width, const int32_t height);
 static bool initShaders(State* state, const char* fragShaderPath);
+static bool initAudio(State* state);
 static void loop(const State state);
 static void deinitApp(State* state);
 static void catchCtrlC(int sig);
@@ -58,6 +62,7 @@ int main(int argc, char** argv)
 
 	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
 	if (!initShaders(&state, fragShaderPath)) return -1;
+	if (!initAudio(&state)) return -1;
 	loop(state);
 	deinitApp(&state);
 	return 0;
@@ -238,6 +243,57 @@ static bool initShaders(State* state, const char* fragShaderPath)
 	state->uniformLocTime = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_TIME);
 	state->uniformLocPeakAmp = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_PEAKAMP);
 	state->uniformLocAvgAmp = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_AVGAMP);
+
+	return true;
+}
+
+// Loading the music and init audio system (alsl)
+static bool initAudio(State* state)
+{
+	int err;
+	snd_pcm_hw_params_t *params;
+	unsigned int rate = 44100;
+	int channels = 2;
+	snd_pcm_uframes_t frames = 32;
+
+	if ((err = snd_pcm_open(&state->pcm_handle, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
+		fprintf(stderr, "PCM open error: %s\n", snd_strerror(err));
+		return false;
+	}
+
+	snd_pcm_hw_params_alloca(&params);
+	snd_pcm_hw_params_any(state->pcm_handle, params);
+
+	if ((err = snd_pcm_hw_params_set_access(state->pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0) {
+		fprintf(stderr, "Error setting access: %s\n", snd_strerror(err));
+		return false;
+	}
+
+	if ((err = snd_pcm_hw_params_set_format(state->pcm_handle, params, SND_PCM_FORMAT_S16_LE)) < 0) {
+		fprintf(stderr, "Error setting format: %s\n", snd_strerror(err));
+		return false;
+	}
+
+	if ((err = snd_pcm_hw_params_set_channels(state->pcm_handle, params, channels)) < 0) {
+		fprintf(stderr, "Error setting channels: %s\n", snd_strerror(err));
+		return false;
+	}
+
+	if ((err = snd_pcm_hw_params_set_rate_near(state->pcm_handle, params, &rate, 0)) < 0) {
+		fprintf(stderr, "Error setting rate: %s\n", snd_strerror(err));
+		return false;
+	}
+
+	if ((err = snd_pcm_hw_params_set_period_size_near(state->pcm_handle, params, &frames, 0)) < 0) {
+		fprintf(stderr, "Error setting period size: %s\n", snd_strerror(err));
+		return false;
+	}
+
+	// Write the parameters to the driver
+	if ((err = snd_pcm_hw_params(state->pcm_handle, params)) < 0) {
+		fprintf(stderr, "Error setting HW params: %s\n", snd_strerror(err));
+		return false;
+	}
 
 	return true;
 }
