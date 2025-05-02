@@ -152,16 +152,22 @@ static void* audio_playback_callback(void* arg)
 		int numSamples = frames_read * state->channels;
 
 		float peak = 0;
-		float sum = 0;
+		float avg = 0;
 		for (int i = 0; i < numSamples; i++) {
-			float s = samples[i];
-			float abs_s = fabs(s);
-			if (abs_s > peak) peak = abs_s;
-			sum += abs_s;
+			float s = fabs(samples[i]);
+			if (s > peak) peak = s;
+			avg += s;
 		}
+		avg /= numSamples;
 
-		peakAmp = peak;
-		avgAmp = sum / numSamples;
+		// EMA smothing peak
+		if (peak > peakAmp)
+			peakAmp = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * peakAmp;
+		else 
+			peakAmp = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * peakAmp;
+
+		// EMA smothing avg
+		avgAmp = AVG_ALPHA * avg + (1 - AVG_ALPHA) * avgAmp;
 
 		snd_pcm_sframes_t frames_written = 
 			snd_pcm_writei(state->pcmHandle, state->musicBuffer, frames_read);

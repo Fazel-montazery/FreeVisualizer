@@ -3,6 +3,10 @@
 #define PCM_DEVICE "default"
 #define MUSIC_BUFFER_SIZE 1024
 
+#define PEAK_ALPHA_ATTACK 0.9f
+#define PEAK_ALPHA_RELEASE 0.995f
+#define AVG_ALPHA 0.2f
+
 #define PATH_SIZE 1024
 #define DATA_DIR ".FreeVisualizer"
 #define SHADER_DIR "shaders"
