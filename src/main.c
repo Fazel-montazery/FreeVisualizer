@@ -30,7 +30,7 @@ typedef struct
 	// Music
 	SNDFILE   *sndFile;
 	snd_pcm_t *pcmHandle;
-	int16_t* musicBuffer;
+	float* musicBuffer;
 	pthread_t musicThread;
 	int channels;
 
@@ -145,23 +145,23 @@ static void* audio_playback_callback(void* arg)
 	State* state = arg;
 
 	sf_count_t frames_read;
-	while ((frames_read = sf_readf_short(state->sndFile, state->musicBuffer, MUSIC_BUFFER_SIZE)) > 0) {
+	while ((frames_read = sf_readf_float(state->sndFile, state->musicBuffer, MUSIC_BUFFER_SIZE)) > 0) {
 		if (isExit) return NULL;
 
-		int16_t* samples = state->musicBuffer;
+		float* samples = state->musicBuffer;
 		int numSamples = frames_read * state->channels;
 
-		int16_t peak = 0;
-		int32_t sum = 0;
+		float peak = 0;
+		float sum = 0;
 		for (int i = 0; i < numSamples; i++) {
-			int16_t v = samples[i];
-			int16_t abs_v = v < 0 ? -v : v;
-			if (abs_v > peak) peak = abs_v;
-			sum += abs_v;
+			float s = samples[i];
+			float abs_s = fabs(s);
+			if (abs_s > peak) peak = abs_s;
+			sum += abs_s;
 		}
 
-		peakAmp = (float)peak / INT16_MAX;
-		avgAmp = (float)sum / numSamples / INT16_MAX;
+		peakAmp = peak;
+		avgAmp = sum / numSamples;
 
 		snd_pcm_sframes_t frames_written = 
 			snd_pcm_writei(state->pcmHandle, state->musicBuffer, frames_read);
@@ -321,7 +321,7 @@ static bool initAudio(State* state, const char* musicPath)
 	}
 
 	err = snd_pcm_set_params(state->pcmHandle,
-                             SND_PCM_FORMAT_S16_LE,
+                             SND_PCM_FORMAT_FLOAT,
                              SND_PCM_ACCESS_RW_INTERLEAVED,
                              chans,
                              rate,
@@ -333,7 +333,7 @@ static bool initAudio(State* state, const char* musicPath)
 		return false;
 	}
 
-	state->musicBuffer = malloc(MUSIC_BUFFER_SIZE * chans * sizeof(int16_t));
+	state->musicBuffer = malloc(MUSIC_BUFFER_SIZE * chans * sizeof(float));
 	if (!state->musicBuffer) {
 		fprintf(stderr, "Music buffer allocation failed!\n");
 		return false;
