@@ -1,12 +1,15 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <pthread.h>
 
 #include "../include/glad/glad.h"
 #include <GLFW/glfw3.h>
 
 #include <alsa/asoundlib.h>
+#include <sndfile.h>
 
 #include "defs.h"
 #include "opts.h"
@@ -24,8 +27,10 @@ typedef struct
 	bool fullscreen;
 
 	// Music
-	char* musicPath;
-	snd_pcm_t *pcm_handle;
+	SNDFILE   *sndFile;
+	snd_pcm_t *pcmHandle;
+	int16_t* musicBuffer;
+	pthread_t musicThread;
 
 	// Shaders
 	GLuint vertShader;
@@ -42,10 +47,13 @@ typedef struct
 // Blueprints
 static bool initWindow(State* state, const int32_t width, const int32_t height);
 static bool initShaders(State* state, const char* fragShaderPath);
-static bool initAudio(State* state);
+static bool initAudio(State* state, const char* musicPath);
 static void loop(const State state);
 static void deinitApp(State* state);
 static void catchCtrlC(int sig);
+
+// Globs
+static bool isExit = false;
 
 // Main
 int main(int argc, char** argv)
@@ -57,12 +65,13 @@ int main(int argc, char** argv)
 	signal(SIGINT, catchCtrlC);
 
 	char fragShaderPath[PATH_SIZE];
-	if (!parseOpts(argc, argv, &state.musicPath, fragShaderPath, PATH_SIZE, &state.fullscreen))
+	char* musicPath;
+	if (!parseOpts(argc, argv, &musicPath, fragShaderPath, PATH_SIZE, &state.fullscreen))
 		return 0;
 
 	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
 	if (!initShaders(&state, fragShaderPath)) return -1;
-	if (!initAudio(&state)) return -1;
+	if (!initAudio(&state, musicPath)) return -1;
 	loop(state);
 	deinitApp(&state);
 	return 0;
@@ -125,6 +134,30 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 			state->fullscreen = true;
 		}
 	}
+}
+
+static void* audio_playback_callback(void* arg)
+{
+	State* state = arg;
+
+	sf_count_t frames_read;
+	while ((frames_read = sf_readf_short(state->sndFile, state->musicBuffer, MUSIC_BUFFER_SIZE)) > 0) {
+		if (isExit) return NULL;
+
+		snd_pcm_sframes_t frames_written = 
+			snd_pcm_writei(state->pcmHandle, state->musicBuffer, frames_read);
+
+		if (frames_written < 0) {
+			frames_written = snd_pcm_recover(state->pcmHandle, frames_written, 0);
+		}
+
+		if (frames_written < 0) {
+			fprintf(stderr, "ALSA write error: %s\n", snd_strerror(frames_written));
+			break;
+		}
+	}
+
+	return NULL;
 }
 
 // Initialize the window for opengl
@@ -248,52 +281,45 @@ static bool initShaders(State* state, const char* fragShaderPath)
 }
 
 // Loading the music and init audio system (alsl)
-static bool initAudio(State* state)
+static bool initAudio(State* state, const char* musicPath)
 {
+	SF_INFO info;
+	state->sndFile = sf_open(musicPath, SFM_READ, &info);
+
+	if (!state->sndFile) {
+		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
+		return false;
+	}
+
+	unsigned int rate    = info.samplerate;
+	unsigned int chans   = info.channels;
+
 	int err;
-	snd_pcm_hw_params_t *params;
-	unsigned int rate = 44100;
-	int channels = 2;
-	snd_pcm_uframes_t frames = 32;
-
-	if ((err = snd_pcm_open(&state->pcm_handle, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
-		fprintf(stderr, "PCM open error: %s\n", snd_strerror(err));
+	if ((err = snd_pcm_open(&state->pcmHandle, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
+		fprintf(stderr, "ALSA device open error: %s\n", snd_strerror(err));
 		return false;
 	}
 
-	snd_pcm_hw_params_alloca(&params);
-	snd_pcm_hw_params_any(state->pcm_handle, params);
+	err = snd_pcm_set_params(state->pcmHandle,
+                             SND_PCM_FORMAT_S16_LE,
+                             SND_PCM_ACCESS_RW_INTERLEAVED,
+                             chans,
+                             rate,
+                             1,
+                             100000); // 0.1 sec latency
 
-	if ((err = snd_pcm_hw_params_set_access(state->pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0) {
-		fprintf(stderr, "Error setting access: %s\n", snd_strerror(err));
+	if (err < 0) {
+		fprintf(stderr, "ALSA set params error: %s\n", snd_strerror(err));
 		return false;
 	}
 
-	if ((err = snd_pcm_hw_params_set_format(state->pcm_handle, params, SND_PCM_FORMAT_S16_LE)) < 0) {
-		fprintf(stderr, "Error setting format: %s\n", snd_strerror(err));
+	state->musicBuffer = malloc(MUSIC_BUFFER_SIZE * chans * sizeof(int16_t));
+	if (!state->musicBuffer) {
+		fprintf(stderr, "Music buffer allocation failed!\n");
 		return false;
 	}
 
-	if ((err = snd_pcm_hw_params_set_channels(state->pcm_handle, params, channels)) < 0) {
-		fprintf(stderr, "Error setting channels: %s\n", snd_strerror(err));
-		return false;
-	}
-
-	if ((err = snd_pcm_hw_params_set_rate_near(state->pcm_handle, params, &rate, 0)) < 0) {
-		fprintf(stderr, "Error setting rate: %s\n", snd_strerror(err));
-		return false;
-	}
-
-	if ((err = snd_pcm_hw_params_set_period_size_near(state->pcm_handle, params, &frames, 0)) < 0) {
-		fprintf(stderr, "Error setting period size: %s\n", snd_strerror(err));
-		return false;
-	}
-
-	// Write the parameters to the driver
-	if ((err = snd_pcm_hw_params(state->pcm_handle, params)) < 0) {
-		fprintf(stderr, "Error setting HW params: %s\n", snd_strerror(err));
-		return false;
-	}
+	pthread_create(&state->musicThread, NULL, audio_playback_callback, state);
 
 	return true;
 }
@@ -305,7 +331,7 @@ static void loop(const State state)
 	glGenVertexArrays(1, &dummyVAO);
 	glBindVertexArray(dummyVAO);
 
-	while (!glfwWindowShouldClose(state.window))
+	while (!glfwWindowShouldClose(state.window) && !isExit)
 	{
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -329,23 +355,31 @@ static void loop(const State state)
 		glfwSwapBuffers(state.window);
 		glfwPollEvents();
 	}
+
+	isExit = true;
 }
 
 // Release all resources
 static void deinitApp(State* state)
 {
+	// Killing playback thread
+	pthread_join(state->musicThread, NULL);
+
 	glDeleteProgram(state->shaderProgram);
 	glfwDestroyWindow(state->window);
 	glfwTerminate();
+	if (state->musicBuffer) free(state->musicBuffer);
+	sf_close(state->sndFile);
+	snd_pcm_drain(state->pcmHandle);
+	snd_pcm_close(state->pcmHandle);
 	// Show terminal cursor (if hidden)
 	printf("\033[?25h");
 	fflush(stdout);
+	exit(0);
 }
 
 // Callback function for Ctrl+C
 static void catchCtrlC(int sig)
 {
-	// Show terminal cursor (if hidden)
-	printf("\033[?25h");
-	fflush(stdout);
+	isExit = true;
 }

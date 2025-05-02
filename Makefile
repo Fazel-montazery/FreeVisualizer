@@ -8,7 +8,7 @@ SHADERDIR := ${DATADIR}/shaders
 SHADERS := shaders/*
 
 SRC := src/main.c src/opts.c src/fs.c src/glad.c src/shader.c
-LIBS := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl -lasound
+LIBS := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl -lasound -lsndfile
 CC := gcc
 TARGET := fv
 FLAGS_RELEASE := -Wall -O2 -DNDEBUG

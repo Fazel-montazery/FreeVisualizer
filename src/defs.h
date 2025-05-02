@@ -1,6 +1,7 @@
 #pragma once
 
 #define PCM_DEVICE "default"
+#define MUSIC_BUFFER_SIZE 1024
 
 #define PATH_SIZE 1024
 #define DATA_DIR ".FreeVisualizer"
