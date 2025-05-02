@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <signal.h>
 #include <pthread.h>
+#include <math.h>
 
 #include "../include/glad/glad.h"
 #include <GLFW/glfw3.h>
@@ -31,6 +32,7 @@ typedef struct
 	snd_pcm_t *pcmHandle;
 	int16_t* musicBuffer;
 	pthread_t musicThread;
+	int channels;
 
 	// Shaders
 	GLuint vertShader;
@@ -54,6 +56,8 @@ static void catchCtrlC(int sig);
 
 // Globs
 static bool isExit = false;
+static float peakAmp = 0.0;
+static float avgAmp = 0.0;
 
 // Main
 int main(int argc, char** argv)
@@ -143,6 +147,21 @@ static void* audio_playback_callback(void* arg)
 	sf_count_t frames_read;
 	while ((frames_read = sf_readf_short(state->sndFile, state->musicBuffer, MUSIC_BUFFER_SIZE)) > 0) {
 		if (isExit) return NULL;
+
+		int16_t* samples = state->musicBuffer;
+		int numSamples = frames_read * state->channels;
+
+		int16_t peak = 0;
+		int32_t sum = 0;
+		for (int i = 0; i < numSamples; i++) {
+			int16_t v = samples[i];
+			int16_t abs_v = v < 0 ? -v : v;
+			if (abs_v > peak) peak = abs_v;
+			sum += abs_v;
+		}
+
+		peakAmp = (float)peak / INT16_MAX;
+		avgAmp = (float)sum / numSamples / INT16_MAX;
 
 		snd_pcm_sframes_t frames_written = 
 			snd_pcm_writei(state->pcmHandle, state->musicBuffer, frames_read);
@@ -280,7 +299,7 @@ static bool initShaders(State* state, const char* fragShaderPath)
 	return true;
 }
 
-// Loading the music and init audio system (alsl)
+// Loading the music and init audio system (alsa)
 static bool initAudio(State* state, const char* musicPath)
 {
 	SF_INFO info;
@@ -293,6 +312,7 @@ static bool initAudio(State* state, const char* musicPath)
 
 	unsigned int rate    = info.samplerate;
 	unsigned int chans   = info.channels;
+	state->channels = info.channels;
 
 	int err;
 	if ((err = snd_pcm_open(&state->pcmHandle, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
@@ -347,6 +367,8 @@ static void loop(const State state)
 		glUniform2ui(state.uniformLocResolution, fbWidth, fbHeight);
 		glUniform2f(state.uniformLocMouse, mouseXpos, mouseYpos);
 		glUniform1f(state.uniformLocTime, glfwGetTime());
+		glUniform1f(state.uniformLocPeakAmp, peakAmp);
+		glUniform1f(state.uniformLocAvgAmp, avgAmp);
 
 		// Drawing
 		glUseProgram(state.shaderProgram);
@@ -355,14 +377,13 @@ static void loop(const State state)
 		glfwSwapBuffers(state.window);
 		glfwPollEvents();
 	}
-
-	isExit = true;
 }
 
 // Release all resources
 static void deinitApp(State* state)
 {
 	// Killing playback thread
+	isExit = true;
 	pthread_join(state->musicThread, NULL);
 
 	glDeleteProgram(state->shaderProgram);
