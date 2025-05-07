@@ -9,55 +9,49 @@
 #include "../include/glad/glad.h"
 #include <GLFW/glfw3.h>
 
-#include <alsa/asoundlib.h>
-#include <sndfile.h>
-
 #include "defs.h"
 #include "opts.h"
 #include "shader.h"
+#include "sound.h"
 
 // App State
 typedef struct
 {
 	// Window
-	GLFWwindow* window;
-	int32_t winWidth; // not in fullscreen mode
-	int32_t winHeight; // not in fullscreen mode
-	int32_t winPosX;
-	int32_t winPosY;
-	bool fullscreen;
+	GLFWwindow*	window;
+	int32_t		winWidth; // not in fullscreen mode
+	int32_t		winHeight; // not in fullscreen mode
+	int32_t		winPosX;
+	int32_t		winPosY;
+	bool		fullscreen;
 
 	// Music
-	SNDFILE   *sndFile;
-	snd_pcm_t *pcmHandle;
-	float* musicBuffer;
-	pthread_t musicThread;
-	int channels;
+	pthread_t	musicThread;
 
 	// Shaders
-	GLuint vertShader;
-	GLuint fragShader;
-	GLuint shaderProgram;
-	GLint uniformLocResolution;
-	GLint uniformLocMouse;
-	GLint uniformLocTime;
-	GLint uniformLocPeakAmp;
-	GLint uniformLocAvgAmp;
+	GLuint		vertShader;
+	GLuint		fragShader;
+	GLuint		shaderProgram;
+	GLint		uniformLocResolution;
+	GLint		uniformLocMouse;
+	GLint		uniformLocTime;
+	GLint		uniformLocPeakAmp;
+	GLint		uniformLocAvgAmp;
 
 } State;
 
 // Blueprints
 static bool initWindow(State* state, const int32_t width, const int32_t height);
 static bool initShaders(State* state, const char* fragShaderPath);
-static bool initAudio(State* state, const char* musicPath);
+static bool initAudio(State* state, char* musicPath);
 static void loop(const State state);
 static void deinitApp(State* state);
 static void catchCtrlC(int sig);
 
 // Globs
-static bool isExit = false;
-static float peakAmp = 0.0;
-static float avgAmp = 0.0;
+static volatile bool isExit = false;
+static volatile float peakAmp = 0.0;
+static volatile float avgAmp = 0.0;
 
 // Main
 int main(int argc, char** argv)
@@ -142,46 +136,96 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 
 static void* audio_playback_callback(void* arg)
 {
-	State* state = arg;
+	char* musicPath = arg;
 
-	sf_count_t frames_read;
-	while ((frames_read = sf_readf_float(state->sndFile, state->musicBuffer, MUSIC_BUFFER_SIZE)) > 0) {
-		if (isExit) return NULL;
+	static float buffer [MUSIC_BUFFER_SIZE];
 
-		float* samples = state->musicBuffer;
-		int numSamples = frames_read * state->channels;
+	SF_INFO info = { 0 };
+	SNDFILE* sndFile = sf_open(musicPath, SFM_READ, &info);
 
-		float peak = 0;
-		float avg = 0;
-		for (int i = 0; i < numSamples; i++) {
-			float s = fabs(samples[i]);
-			if (s > peak) peak = s;
-			avg += s;
+	if (!sndFile) {
+		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
+		isExit = true;
+		return NULL;
+	}
+
+	if (info.channels < 1 || info.channels > 2) {	
+		fprintf (stderr, "Error : channels = %d\n", info.channels);
+		isExit = true;
+		return NULL;
+	}
+
+	snd_pcm_t* pcmHandle = alsa_open(info.channels, (unsigned) info.samplerate, SF_FALSE);
+	if (!pcmHandle) {
+		isExit = true;
+		return NULL;
+	}
+	
+	int subformat = info.format & SF_FORMAT_SUBMASK;
+	int readcount = 0;
+
+	if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE) {
+		double	scale;
+
+		sf_command (sndFile, SFC_CALC_SIGNAL_MAX, &scale, sizeof (scale)) ;
+		if (scale > 1.0)
+			scale = 1.0 / scale;
+		else
+			scale = 1.0;
+
+		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && !isExit)
+		{	
+			float peak = 0;
+			float avg = 0;
+
+			for (int m = 0 ; m < readcount ; m++) {
+				buffer [m] *= scale ;
+				float s = fabs(buffer[m]);
+				if (s > peak) peak = s;
+				avg += s;
+			}
+			avg /= readcount;
+
+			// EMA smothing peak
+			if (peak > peakAmp)
+				peakAmp = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * peakAmp;
+			else 
+				peakAmp = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * peakAmp;
+
+			// EMA smothing avg
+			avgAmp = AVG_ALPHA * avg + (1 - AVG_ALPHA) * avgAmp;
+
+			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE / info.channels, info.channels) ;
 		}
-		avg /= numSamples;
+	} else {
+		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && !isExit) {
+			float peak = 0;
+			float avg = 0;
 
-		// EMA smothing peak
-		if (peak > peakAmp)
-			peakAmp = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * peakAmp;
-		else 
-			peakAmp = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * peakAmp;
+			for (int m = 0 ; m < readcount ; m++) {
+				float s = fabs(buffer[m]);
+				if (s > peak) peak = s;
+				avg += s;
+			}
+			avg /= readcount;
 
-		// EMA smothing avg
-		avgAmp = AVG_ALPHA * avg + (1 - AVG_ALPHA) * avgAmp;
+			// EMA smothing peak
+			if (peak > peakAmp)
+				peakAmp = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * peakAmp;
+			else 
+				peakAmp = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * peakAmp;
 
-		snd_pcm_sframes_t frames_written = 
-			snd_pcm_writei(state->pcmHandle, state->musicBuffer, frames_read);
+			// EMA smothing avg
+			avgAmp = AVG_ALPHA * avg + (1 - AVG_ALPHA) * avgAmp;
 
-		if (frames_written < 0) {
-			frames_written = snd_pcm_recover(state->pcmHandle, frames_written, 0);
-		}
-
-		if (frames_written < 0) {
-			fprintf(stderr, "ALSA write error: %s\n", snd_strerror(frames_written));
-			break;
+			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE/ info.channels, info.channels);
 		}
 	}
 
+	sf_close(sndFile);
+	snd_pcm_drain(pcmHandle);
+	snd_pcm_close(pcmHandle);
+	isExit = true;
 	return NULL;
 }
 
@@ -306,47 +350,9 @@ static bool initShaders(State* state, const char* fragShaderPath)
 }
 
 // Loading the music and init audio system (alsa)
-static bool initAudio(State* state, const char* musicPath)
+static bool initAudio(State* state, char* musicPath)
 {
-	SF_INFO info;
-	state->sndFile = sf_open(musicPath, SFM_READ, &info);
-
-	if (!state->sndFile) {
-		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
-		return false;
-	}
-
-	unsigned int rate    = info.samplerate;
-	unsigned int chans   = info.channels;
-	state->channels = info.channels;
-
-	int err;
-	if ((err = snd_pcm_open(&state->pcmHandle, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
-		fprintf(stderr, "ALSA device open error: %s\n", snd_strerror(err));
-		return false;
-	}
-
-	err = snd_pcm_set_params(state->pcmHandle,
-                             SND_PCM_FORMAT_FLOAT,
-                             SND_PCM_ACCESS_RW_INTERLEAVED,
-                             chans,
-                             rate,
-                             1,
-                             100000); // 0.1 sec latency
-
-	if (err < 0) {
-		fprintf(stderr, "ALSA set params error: %s\n", snd_strerror(err));
-		return false;
-	}
-
-	state->musicBuffer = malloc(MUSIC_BUFFER_SIZE * chans * sizeof(float));
-	if (!state->musicBuffer) {
-		fprintf(stderr, "Music buffer allocation failed!\n");
-		return false;
-	}
-
-	pthread_create(&state->musicThread, NULL, audio_playback_callback, state);
-
+	pthread_create(&state->musicThread, NULL, audio_playback_callback, musicPath);
 	return true;
 }
 
@@ -395,10 +401,6 @@ static void deinitApp(State* state)
 	glDeleteProgram(state->shaderProgram);
 	glfwDestroyWindow(state->window);
 	glfwTerminate();
-	if (state->musicBuffer) free(state->musicBuffer);
-	sf_close(state->sndFile);
-	snd_pcm_drain(state->pcmHandle);
-	snd_pcm_close(state->pcmHandle);
 	// Show terminal cursor (if hidden)
 	printf("\033[?25h");
 	fflush(stdout);
