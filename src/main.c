@@ -1,9 +1,9 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <signal.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <math.h>
 
 #include "../include/glad/glad.h"
@@ -49,13 +49,22 @@ static void deinitApp(State* state);
 static void catchCtrlC(int sig);
 
 // Globs
-static volatile bool isExit = false;
-static volatile float peakAmp = 0.0;
-static volatile float avgAmp = 0.0;
+static atomic_bool isExit = false;
+
+static bool isPaused = false;
+static pthread_mutex_t pauseMX = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t pauseCV = PTHREAD_COND_INITIALIZER;
+static _Atomic float peakAmp = 0.0;
+static _Atomic float avgAmp = 0.0;
 
 // Main
 int main(int argc, char** argv)
 {
+	// Initializing atomics
+	atomic_store_explicit(&isExit, false, memory_order_relaxed);
+	atomic_store_explicit(&peakAmp, 0.0, memory_order_relaxed);
+	atomic_store_explicit(&avgAmp, 0.0, memory_order_relaxed);
+
 	// Initializing the app state
 	State state = { 0 };
 
@@ -76,6 +85,145 @@ int main(int argc, char** argv)
 }
 
 // Helper functions
+static void* audio_playback_callback(void* arg)
+{
+	char* musicPath = arg;
+
+	static float buffer [MUSIC_BUFFER_SIZE];
+
+	SF_INFO info = { 0 };
+	SNDFILE* sndFile = sf_open(musicPath, SFM_READ, &info);
+
+	if (!sndFile) {
+		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
+		atomic_store_explicit(&isExit, true, memory_order_relaxed);
+		return NULL;
+	}
+
+	if (info.channels < 1 || info.channels > 2) {	
+		fprintf (stderr, "Error : channels = %d\n", info.channels);
+		atomic_store_explicit(&isExit, true, memory_order_relaxed);
+		return NULL;
+	}
+
+	snd_pcm_t* pcmHandle = alsa_open(info.channels, (unsigned) info.samplerate, SF_TRUE);
+	if (!pcmHandle) {
+		atomic_store_explicit(&isExit, true, memory_order_relaxed);
+		return NULL;
+	}
+	
+	int subformat = info.format & SF_FORMAT_SUBMASK;
+	int readcount = 0;
+
+	if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE) {
+		double	scale;
+
+		sf_command (sndFile, SFC_CALC_SIGNAL_MAX, &scale, sizeof (scale)) ;
+		if (scale > 1.0)
+			scale = 1.0 / scale;
+		else
+			scale = 1.0;
+
+		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && 
+				!atomic_load_explicit(&isExit, memory_order_relaxed)) {
+			float peak = 0;
+			float avg = 0;
+
+			for (int m = 0 ; m < readcount ; m++) {
+				buffer [m] *= scale ;
+				float s = fabs(buffer[m]);
+				if (s > peak) peak = s;
+				avg += s;
+			}
+			avg /= readcount;
+
+			// EMA smothing peak
+			float prePeak = atomic_load_explicit(&peakAmp, memory_order_relaxed);
+			if (peak > prePeak)
+				prePeak = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * prePeak;
+			else 
+				prePeak = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * prePeak;
+
+			// EMA smothing avg
+			float preAvg = atomic_load_explicit(&avgAmp, memory_order_relaxed);
+			preAvg = AVG_ALPHA * avg + (1 - AVG_ALPHA) * preAvg;
+
+			atomic_store_explicit(&peakAmp, prePeak, memory_order_relaxed);
+			atomic_store_explicit(&avgAmp,  preAvg,  memory_order_relaxed);
+
+			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE / info.channels, info.channels) ;
+
+			pthread_mutex_lock(&pauseMX);
+			while (isPaused) {
+				snd_pcm_pause(pcmHandle, 1);
+				pthread_cond_wait(&pauseCV, &pauseMX);
+				if (atomic_load_explicit(&isExit, memory_order_relaxed)) break;
+				snd_pcm_pause(pcmHandle, 0);
+			}
+			pthread_mutex_unlock(&pauseMX);
+		}
+	} else {
+		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && 
+				!atomic_load_explicit(&isExit, memory_order_relaxed)) {
+			float peak = 0;
+			float avg = 0;
+
+			for (int m = 0 ; m < readcount ; m++) {
+				float s = fabs(buffer[m]);
+				if (s > peak) peak = s;
+				avg += s;
+			}
+			avg /= readcount;
+
+			// EMA smothing peak
+			float prePeak = atomic_load_explicit(&peakAmp, memory_order_relaxed);
+			if (peak > prePeak)
+				prePeak = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * prePeak;
+			else 
+				prePeak = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * prePeak;
+
+			// EMA smothing avg
+			float preAvg = atomic_load_explicit(&avgAmp, memory_order_relaxed);
+			preAvg = AVG_ALPHA * avg + (1 - AVG_ALPHA) * preAvg;
+
+			atomic_store_explicit(&peakAmp, prePeak, memory_order_relaxed);
+			atomic_store_explicit(&avgAmp,  preAvg,  memory_order_relaxed);
+
+			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE/ info.channels, info.channels);
+
+			pthread_mutex_lock(&pauseMX);
+			while (isPaused) {
+				snd_pcm_pause(pcmHandle, 1);
+				pthread_cond_wait(&pauseCV, &pauseMX);
+				if (atomic_load_explicit(&isExit, memory_order_relaxed)) break;
+				snd_pcm_pause(pcmHandle, 0);
+			}
+			pthread_mutex_unlock(&pauseMX);
+		}
+	}
+
+	sf_close(sndFile);
+	snd_pcm_drain(pcmHandle);
+	snd_pcm_close(pcmHandle);
+	atomic_store_explicit(&isExit, true, memory_order_relaxed);
+	return NULL;
+}
+
+static void pauseAudio() 
+{
+	pthread_mutex_lock(&pauseMX);
+	isPaused = true;
+	pthread_mutex_unlock(&pauseMX);
+}
+
+static void resumeAudio() 
+{
+	pthread_mutex_lock(&pauseMX);
+	isPaused = false;
+	pthread_cond_signal(&pauseCV);
+	pthread_mutex_unlock(&pauseMX);
+}
+
 #ifndef NDEBUG
 static void glfw_error_callback(int error, const char* description)
 {
@@ -132,101 +280,12 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 			state->fullscreen = true;
 		}
 	}
-}
-
-static void* audio_playback_callback(void* arg)
-{
-	char* musicPath = arg;
-
-	static float buffer [MUSIC_BUFFER_SIZE];
-
-	SF_INFO info = { 0 };
-	SNDFILE* sndFile = sf_open(musicPath, SFM_READ, &info);
-
-	if (!sndFile) {
-		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
-		isExit = true;
-		return NULL;
-	}
-
-	if (info.channels < 1 || info.channels > 2) {	
-		fprintf (stderr, "Error : channels = %d\n", info.channels);
-		isExit = true;
-		return NULL;
-	}
-
-	snd_pcm_t* pcmHandle = alsa_open(info.channels, (unsigned) info.samplerate, SF_FALSE);
-	if (!pcmHandle) {
-		isExit = true;
-		return NULL;
-	}
-	
-	int subformat = info.format & SF_FORMAT_SUBMASK;
-	int readcount = 0;
-
-	if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE) {
-		double	scale;
-
-		sf_command (sndFile, SFC_CALC_SIGNAL_MAX, &scale, sizeof (scale)) ;
-		if (scale > 1.0)
-			scale = 1.0 / scale;
+	else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+		if (isPaused)
+			resumeAudio();
 		else
-			scale = 1.0;
-
-		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && !isExit)
-		{	
-			float peak = 0;
-			float avg = 0;
-
-			for (int m = 0 ; m < readcount ; m++) {
-				buffer [m] *= scale ;
-				float s = fabs(buffer[m]);
-				if (s > peak) peak = s;
-				avg += s;
-			}
-			avg /= readcount;
-
-			// EMA smothing peak
-			if (peak > peakAmp)
-				peakAmp = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * peakAmp;
-			else 
-				peakAmp = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * peakAmp;
-
-			// EMA smothing avg
-			avgAmp = AVG_ALPHA * avg + (1 - AVG_ALPHA) * avgAmp;
-
-			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE / info.channels, info.channels) ;
-		}
-	} else {
-		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && !isExit) {
-			float peak = 0;
-			float avg = 0;
-
-			for (int m = 0 ; m < readcount ; m++) {
-				float s = fabs(buffer[m]);
-				if (s > peak) peak = s;
-				avg += s;
-			}
-			avg /= readcount;
-
-			// EMA smothing peak
-			if (peak > peakAmp)
-				peakAmp = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * peakAmp;
-			else 
-				peakAmp = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * peakAmp;
-
-			// EMA smothing avg
-			avgAmp = AVG_ALPHA * avg + (1 - AVG_ALPHA) * avgAmp;
-
-			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE/ info.channels, info.channels);
-		}
+			pauseAudio();
 	}
-
-	sf_close(sndFile);
-	snd_pcm_drain(pcmHandle);
-	snd_pcm_close(pcmHandle);
-	isExit = true;
-	return NULL;
 }
 
 // Initialize the window for opengl
@@ -352,7 +411,10 @@ static bool initShaders(State* state, const char* fragShaderPath)
 // Loading the music and init audio system (alsa)
 static bool initAudio(State* state, char* musicPath)
 {
-	pthread_create(&state->musicThread, NULL, audio_playback_callback, musicPath);
+	if (pthread_create(&state->musicThread, NULL, audio_playback_callback, musicPath) != 0) {
+		fprintf(stderr, "Error creating music thread.\n");
+		return false;
+	}
 	return true;
 }
 
@@ -363,7 +425,7 @@ static void loop(const State state)
 	glGenVertexArrays(1, &dummyVAO);
 	glBindVertexArray(dummyVAO);
 
-	while (!glfwWindowShouldClose(state.window) && !isExit)
+	while (!glfwWindowShouldClose(state.window) && !atomic_load_explicit(&isExit, memory_order_relaxed))
 	{
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -379,8 +441,8 @@ static void loop(const State state)
 		glUniform2ui(state.uniformLocResolution, fbWidth, fbHeight);
 		glUniform2f(state.uniformLocMouse, mouseXpos, mouseYpos);
 		glUniform1f(state.uniformLocTime, glfwGetTime());
-		glUniform1f(state.uniformLocPeakAmp, peakAmp);
-		glUniform1f(state.uniformLocAvgAmp, avgAmp);
+		glUniform1f(state.uniformLocPeakAmp, atomic_load_explicit(&peakAmp, memory_order_relaxed));
+		glUniform1f(state.uniformLocAvgAmp, atomic_load_explicit(&avgAmp, memory_order_relaxed));
 
 		// Drawing
 		glUseProgram(state.shaderProgram);
@@ -395,7 +457,10 @@ static void loop(const State state)
 static void deinitApp(State* state)
 {
 	// Killing playback thread
-	isExit = true;
+	atomic_store_explicit(&isExit, true, memory_order_relaxed);
+	pthread_mutex_lock(&pauseMX);
+	pthread_cond_broadcast(&pauseCV);
+	pthread_mutex_unlock(&pauseMX);
 	pthread_join(state->musicThread, NULL);
 
 	glDeleteProgram(state->shaderProgram);
@@ -404,11 +469,10 @@ static void deinitApp(State* state)
 	// Show terminal cursor (if hidden)
 	printf("\033[?25h");
 	fflush(stdout);
-	exit(0);
 }
 
 // Callback function for Ctrl+C
 static void catchCtrlC(int sig)
 {
-	isExit = true;
+	atomic_store_explicit(&isExit, true, memory_order_relaxed);
 }
