@@ -1,9 +1,10 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <signal.h>
-#include <pthread.h>
+#ifdef __STDC_NO_THREADS__
+#error "<threads.h> not supported"
+#endif
+
+#include <threads.h>
 #include <stdatomic.h>
+#include <signal.h>
 #include <math.h>
 
 #include "../include/glad/glad.h"
@@ -26,7 +27,11 @@ typedef struct
 	bool		fullscreen;
 
 	// Music
-	pthread_t	musicThread;
+	char*		musicPath;
+	thrd_t		musicThread;
+	mtx_t		pauseMX;
+	cnd_t		pauseCV;
+	bool		isPaused;
 
 	// Shaders
 	GLuint		vertShader;
@@ -43,19 +48,15 @@ typedef struct
 // Blueprints
 static bool initWindow(State* state, const int32_t width, const int32_t height);
 static bool initShaders(State* state, const char* fragShaderPath);
-static bool initAudio(State* state, char* musicPath);
+static bool initAudio(State* state);
 static void loop(const State state);
 static void deinitApp(State* state);
 static void catchCtrlC(int sig);
 
 // Globs
-static atomic_bool isExit = false;
-
-static bool isPaused = false;
-static pthread_mutex_t pauseMX = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t pauseCV = PTHREAD_COND_INITIALIZER;
-static _Atomic float peakAmp = 0.0;
-static _Atomic float avgAmp = 0.0;
+static _Atomic bool isExit;
+static _Atomic float peakAmp;
+static _Atomic float avgAmp;
 
 // Main
 int main(int argc, char** argv)
@@ -72,44 +73,43 @@ int main(int argc, char** argv)
 	signal(SIGINT, catchCtrlC);
 
 	char fragShaderPath[PATH_SIZE];
-	char* musicPath;
-	if (!parseOpts(argc, argv, &musicPath, fragShaderPath, PATH_SIZE, &state.fullscreen))
+	if (!parseOpts(argc, argv, &state.musicPath, fragShaderPath, PATH_SIZE, &state.fullscreen))
 		return 0;
 
 	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
 	if (!initShaders(&state, fragShaderPath)) return -1;
-	if (!initAudio(&state, musicPath)) return -1;
+	if (!initAudio(&state)) return -1;
 	loop(state);
 	deinitApp(&state);
 	return 0;
 }
 
 // Helper functions
-static void* audio_playback_callback(void* arg)
+static int audio_playback_callback(void* arg)
 {
-	char* musicPath = arg;
+	State* state = arg;
 
 	static float buffer [MUSIC_BUFFER_SIZE];
 
 	SF_INFO info = { 0 };
-	SNDFILE* sndFile = sf_open(musicPath, SFM_READ, &info);
+	SNDFILE* sndFile = sf_open(state->musicPath, SFM_READ, &info);
 
 	if (!sndFile) {
 		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
 		atomic_store_explicit(&isExit, true, memory_order_relaxed);
-		return NULL;
+		return 0;
 	}
 
 	if (info.channels < 1 || info.channels > 2) {	
 		fprintf (stderr, "Error : channels = %d\n", info.channels);
 		atomic_store_explicit(&isExit, true, memory_order_relaxed);
-		return NULL;
+		return 0;
 	}
 
 	snd_pcm_t* pcmHandle = alsa_open(info.channels, (unsigned) info.samplerate, SF_TRUE);
 	if (!pcmHandle) {
 		atomic_store_explicit(&isExit, true, memory_order_relaxed);
-		return NULL;
+		return 0;
 	}
 	
 	int subformat = info.format & SF_FORMAT_SUBMASK;
@@ -153,14 +153,14 @@ static void* audio_playback_callback(void* arg)
 
 			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE / info.channels, info.channels) ;
 
-			pthread_mutex_lock(&pauseMX);
-			while (isPaused) {
+			mtx_lock(&state->pauseMX);
+			while (state->isPaused) {
 				snd_pcm_pause(pcmHandle, 1);
-				pthread_cond_wait(&pauseCV, &pauseMX);
+				cnd_wait(&state->pauseCV, &state->pauseMX);
 				if (atomic_load_explicit(&isExit, memory_order_relaxed)) break;
 				snd_pcm_pause(pcmHandle, 0);
 			}
-			pthread_mutex_unlock(&pauseMX);
+			mtx_unlock(&state->pauseMX);
 		}
 	} else {
 		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && 
@@ -191,14 +191,14 @@ static void* audio_playback_callback(void* arg)
 
 			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE/ info.channels, info.channels);
 
-			pthread_mutex_lock(&pauseMX);
-			while (isPaused) {
+			mtx_lock(&state->pauseMX);
+			while (state->isPaused) {
 				snd_pcm_pause(pcmHandle, 1);
-				pthread_cond_wait(&pauseCV, &pauseMX);
+				cnd_wait(&state->pauseCV, &state->pauseMX);
 				if (atomic_load_explicit(&isExit, memory_order_relaxed)) break;
 				snd_pcm_pause(pcmHandle, 0);
 			}
-			pthread_mutex_unlock(&pauseMX);
+			mtx_unlock(&state->pauseMX);
 		}
 	}
 
@@ -206,22 +206,22 @@ static void* audio_playback_callback(void* arg)
 	snd_pcm_drain(pcmHandle);
 	snd_pcm_close(pcmHandle);
 	atomic_store_explicit(&isExit, true, memory_order_relaxed);
-	return NULL;
+	return 0;
 }
 
-static void pauseAudio() 
+static void pauseAudio(State* state)
 {
-	pthread_mutex_lock(&pauseMX);
-	isPaused = true;
-	pthread_mutex_unlock(&pauseMX);
+	mtx_lock(&state->pauseMX);
+	state->isPaused = true;
+	mtx_unlock(&state->pauseMX);
 }
 
-static void resumeAudio() 
+static void resumeAudio(State* state) 
 {
-	pthread_mutex_lock(&pauseMX);
-	isPaused = false;
-	pthread_cond_signal(&pauseCV);
-	pthread_mutex_unlock(&pauseMX);
+	mtx_lock(&state->pauseMX);
+	state->isPaused = false;
+	cnd_signal(&state->pauseCV);
+	mtx_unlock(&state->pauseMX);
 }
 
 #ifndef NDEBUG
@@ -281,10 +281,10 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 		}
 	}
 	else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-		if (isPaused)
-			resumeAudio();
+		if (state->isPaused)
+			resumeAudio(state);
 		else
-			pauseAudio();
+			pauseAudio(state);
 	}
 }
 
@@ -409,12 +409,23 @@ static bool initShaders(State* state, const char* fragShaderPath)
 }
 
 // Loading the music and init audio system (alsa)
-static bool initAudio(State* state, char* musicPath)
+static bool initAudio(State* state)
 {
-	if (pthread_create(&state->musicThread, NULL, audio_playback_callback, musicPath) != 0) {
+	if (mtx_init(&state->pauseMX, mtx_plain) != thrd_success) {
+		fprintf(stderr, "Error creating mutex for music thread.\n");
+		return false;
+	}
+
+	if (cnd_init(&state->pauseCV) != thrd_success) {
+		fprintf(stderr, "Error creating conditional variable for music thread.\n");
+		return false;
+	}
+
+	if (thrd_create(&state->musicThread, audio_playback_callback, state) != thrd_success) {
 		fprintf(stderr, "Error creating music thread.\n");
 		return false;
 	}
+
 	return true;
 }
 
@@ -458,10 +469,10 @@ static void deinitApp(State* state)
 {
 	// Killing playback thread
 	atomic_store_explicit(&isExit, true, memory_order_relaxed);
-	pthread_mutex_lock(&pauseMX);
-	pthread_cond_broadcast(&pauseCV);
-	pthread_mutex_unlock(&pauseMX);
-	pthread_join(state->musicThread, NULL);
+	mtx_lock(&state->pauseMX);
+	cnd_broadcast(&state->pauseCV);
+	mtx_unlock(&state->pauseMX);
+	thrd_join(state->musicThread, NULL);
 
 	glDeleteProgram(state->shaderProgram);
 	glfwDestroyWindow(state->window);
