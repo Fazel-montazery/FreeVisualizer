@@ -32,6 +32,8 @@ typedef struct
 	mtx_t		pauseMX;
 	cnd_t		pauseCV;
 	bool		isPaused;
+	int		duration;
+	_Atomic int	positionSec;
 	_Atomic int	seekNow;
 	_Atomic float	peakAmp;
 	_Atomic float	avgAmp;
@@ -62,11 +64,16 @@ static _Atomic bool isExit;
 // Main
 int main(int argc, char** argv)
 {
+	// Hide terminal cursor
+	printf("\033[?25l");
+	fflush(stdout);
+
 	// Initializing the app state
 	State state = { 0 };
 
 	// Initializing atomics
 	atomic_store_explicit(&isExit, false, memory_order_relaxed);
+	atomic_store_explicit(&state.positionSec, 0, memory_order_relaxed);
 	atomic_store_explicit(&state.seekNow, 0, memory_order_relaxed);
 	atomic_store_explicit(&state.peakAmp, 0.0, memory_order_relaxed);
 	atomic_store_explicit(&state.avgAmp, 0.0, memory_order_relaxed);
@@ -169,6 +176,10 @@ static int audio_playback_callback(void* arg)
 				sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
 				atomic_store_explicit(&state->seekNow, 0, memory_order_relaxed);
 			}
+
+			atomic_store_explicit(&state->positionSec,
+					sf_seek(sndFile, 0, SEEK_CUR) / info.samplerate,
+					memory_order_relaxed);
 		}
 	} else {
 		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && 
@@ -213,6 +224,10 @@ static int audio_playback_callback(void* arg)
 				sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
 				atomic_store_explicit(&state->seekNow, 0, memory_order_relaxed);
 			}
+
+			atomic_store_explicit(&state->positionSec, 
+					sf_seek(sndFile, 0, SEEK_CUR) / info.samplerate, 
+					memory_order_relaxed);
 		}
 	}
 
@@ -312,6 +327,12 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 	else if (key == GLFW_KEY_DOWN && action == GLFW_PRESS) {
 		atomic_fetch_sub_explicit(&state->seekNow, MUSIC_CONTROL_FAST_SEC, memory_order_relaxed);
 	}
+}
+
+static void clearLineAnsi()
+{
+	printf("\033[2K\r");
+	fflush(stdout);
 }
 
 // Initialize the window for opengl
@@ -437,6 +458,17 @@ static bool initShaders(State* state, const char* fragShaderPath)
 // Loading the music and init audio system (alsa)
 static bool initAudio(State* state)
 {
+	SF_INFO info = { 0 };
+	SNDFILE* sndFile = sf_open(state->musicPath, SFM_READ, &info);
+
+	if (!sndFile) {
+		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
+		return false;
+	}
+
+	state->duration = info.frames / info.samplerate;
+	sf_close(sndFile);
+
 	if (mtx_init(&state->pauseMX, mtx_plain) != thrd_success) {
 		fprintf(stderr, "Error creating mutex for music thread.\n");
 		return false;
@@ -466,6 +498,14 @@ static void loop(State* state)
 	{
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
+
+		// Printing duration and position
+		clearLineAnsi();
+		fprintf(stdout, "[%s] %d/%d seconds",
+				(state->isPaused) ? "Paused" : "Playing",
+				atomic_load_explicit(&state->positionSec, memory_order_relaxed),
+				state->duration);
+		fflush(stdout);
 
 		// Retriving Resolution and mouse pos
 		int fbWidth, fbHeight;
