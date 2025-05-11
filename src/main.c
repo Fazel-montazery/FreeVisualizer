@@ -32,6 +32,9 @@ typedef struct
 	mtx_t		pauseMX;
 	cnd_t		pauseCV;
 	bool		isPaused;
+	_Atomic int	seekNow;
+	_Atomic float	peakAmp;
+	_Atomic float	avgAmp;
 
 	// Shaders
 	GLuint		vertShader;
@@ -49,25 +52,24 @@ typedef struct
 static bool initWindow(State* state, const int32_t width, const int32_t height);
 static bool initShaders(State* state, const char* fragShaderPath);
 static bool initAudio(State* state);
-static void loop(const State state);
+static void loop(State* state);
 static void deinitApp(State* state);
 static void catchCtrlC(int sig);
 
 // Globs
 static _Atomic bool isExit;
-static _Atomic float peakAmp;
-static _Atomic float avgAmp;
 
 // Main
 int main(int argc, char** argv)
 {
-	// Initializing atomics
-	atomic_store_explicit(&isExit, false, memory_order_relaxed);
-	atomic_store_explicit(&peakAmp, 0.0, memory_order_relaxed);
-	atomic_store_explicit(&avgAmp, 0.0, memory_order_relaxed);
-
 	// Initializing the app state
 	State state = { 0 };
+
+	// Initializing atomics
+	atomic_store_explicit(&isExit, false, memory_order_relaxed);
+	atomic_store_explicit(&state.seekNow, 0, memory_order_relaxed);
+	atomic_store_explicit(&state.peakAmp, 0.0, memory_order_relaxed);
+	atomic_store_explicit(&state.avgAmp, 0.0, memory_order_relaxed);
 
 	// Setting up the Ctrl+C signal
 	signal(SIGINT, catchCtrlC);
@@ -79,7 +81,7 @@ int main(int argc, char** argv)
 	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
 	if (!initShaders(&state, fragShaderPath)) return -1;
 	if (!initAudio(&state)) return -1;
-	loop(state);
+	loop(&state);
 	deinitApp(&state);
 	return 0;
 }
@@ -138,18 +140,18 @@ static int audio_playback_callback(void* arg)
 			avg /= readcount;
 
 			// EMA smothing peak
-			float prePeak = atomic_load_explicit(&peakAmp, memory_order_relaxed);
+			float prePeak = atomic_load_explicit(&state->peakAmp, memory_order_relaxed);
 			if (peak > prePeak)
 				prePeak = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * prePeak;
 			else 
 				prePeak = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * prePeak;
 
 			// EMA smothing avg
-			float preAvg = atomic_load_explicit(&avgAmp, memory_order_relaxed);
+			float preAvg = atomic_load_explicit(&state->avgAmp, memory_order_relaxed);
 			preAvg = AVG_ALPHA * avg + (1 - AVG_ALPHA) * preAvg;
 
-			atomic_store_explicit(&peakAmp, prePeak, memory_order_relaxed);
-			atomic_store_explicit(&avgAmp,  preAvg,  memory_order_relaxed);
+			atomic_store_explicit(&state->peakAmp, prePeak, memory_order_relaxed);
+			atomic_store_explicit(&state->avgAmp,  preAvg,  memory_order_relaxed);
 
 			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE / info.channels, info.channels) ;
 
@@ -161,6 +163,12 @@ static int audio_playback_callback(void* arg)
 				snd_pcm_pause(pcmHandle, 0);
 			}
 			mtx_unlock(&state->pauseMX);
+
+			int seek = atomic_load_explicit(&state->seekNow, memory_order_relaxed);
+			if (seek) {
+				sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
+				atomic_store_explicit(&state->seekNow, 0, memory_order_relaxed);
+			}
 		}
 	} else {
 		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && 
@@ -176,18 +184,18 @@ static int audio_playback_callback(void* arg)
 			avg /= readcount;
 
 			// EMA smothing peak
-			float prePeak = atomic_load_explicit(&peakAmp, memory_order_relaxed);
+			float prePeak = atomic_load_explicit(&state->peakAmp, memory_order_relaxed);
 			if (peak > prePeak)
 				prePeak = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * prePeak;
 			else 
 				prePeak = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * prePeak;
 
 			// EMA smothing avg
-			float preAvg = atomic_load_explicit(&avgAmp, memory_order_relaxed);
+			float preAvg = atomic_load_explicit(&state->avgAmp, memory_order_relaxed);
 			preAvg = AVG_ALPHA * avg + (1 - AVG_ALPHA) * preAvg;
 
-			atomic_store_explicit(&peakAmp, prePeak, memory_order_relaxed);
-			atomic_store_explicit(&avgAmp,  preAvg,  memory_order_relaxed);
+			atomic_store_explicit(&state->peakAmp, prePeak, memory_order_relaxed);
+			atomic_store_explicit(&state->avgAmp,  preAvg,  memory_order_relaxed);
 
 			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE/ info.channels, info.channels);
 
@@ -199,6 +207,12 @@ static int audio_playback_callback(void* arg)
 				snd_pcm_pause(pcmHandle, 0);
 			}
 			mtx_unlock(&state->pauseMX);
+
+			int seek = atomic_load_explicit(&state->seekNow, memory_order_relaxed);
+			if (seek) {
+				sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
+				atomic_store_explicit(&state->seekNow, 0, memory_order_relaxed);
+			}
 		}
 	}
 
@@ -285,6 +299,18 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 			resumeAudio(state);
 		else
 			pauseAudio(state);
+	}
+	else if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS) {
+		atomic_fetch_add_explicit(&state->seekNow, MUSIC_CONTROL_SLOW_SEC, memory_order_relaxed);
+	}
+	else if (key == GLFW_KEY_LEFT && action == GLFW_PRESS) {
+		atomic_fetch_sub_explicit(&state->seekNow, MUSIC_CONTROL_SLOW_SEC, memory_order_relaxed);
+	}
+	else if (key == GLFW_KEY_UP && action == GLFW_PRESS) {
+		atomic_fetch_add_explicit(&state->seekNow, MUSIC_CONTROL_FAST_SEC, memory_order_relaxed);
+	}
+	else if (key == GLFW_KEY_DOWN && action == GLFW_PRESS) {
+		atomic_fetch_sub_explicit(&state->seekNow, MUSIC_CONTROL_FAST_SEC, memory_order_relaxed);
 	}
 }
 
@@ -430,36 +456,38 @@ static bool initAudio(State* state)
 }
 
 // Main drawing loop
-static void loop(const State state)
+static void loop(State* state)
 {
 	GLuint dummyVAO; 
 	glGenVertexArrays(1, &dummyVAO);
 	glBindVertexArray(dummyVAO);
 
-	while (!glfwWindowShouldClose(state.window) && !atomic_load_explicit(&isExit, memory_order_relaxed))
+	while (!glfwWindowShouldClose(state->window) && !atomic_load_explicit(&isExit, memory_order_relaxed))
 	{
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		// Retriving Resolution and mouse pos
 		int fbWidth, fbHeight;
-		glfwGetFramebufferSize(state.window, &fbWidth, &fbHeight);
+		glfwGetFramebufferSize(state->window, &fbWidth, &fbHeight);
 
 		double mouseXpos, mouseYpos;
-		glfwGetCursorPos(state.window, &mouseXpos, &mouseYpos);
+		glfwGetCursorPos(state->window, &mouseXpos, &mouseYpos);
 
 		// Uploading uniforms
-		glUniform2ui(state.uniformLocResolution, fbWidth, fbHeight);
-		glUniform2f(state.uniformLocMouse, mouseXpos, mouseYpos);
-		glUniform1f(state.uniformLocTime, glfwGetTime());
-		glUniform1f(state.uniformLocPeakAmp, atomic_load_explicit(&peakAmp, memory_order_relaxed));
-		glUniform1f(state.uniformLocAvgAmp, atomic_load_explicit(&avgAmp, memory_order_relaxed));
+		glUniform2ui(state->uniformLocResolution, fbWidth, fbHeight);
+		glUniform2f(state->uniformLocMouse, mouseXpos, mouseYpos);
+		glUniform1f(state->uniformLocTime, glfwGetTime());
+		glUniform1f(state->uniformLocPeakAmp, 
+				atomic_load_explicit(&state->peakAmp, memory_order_relaxed));
+		glUniform1f(state->uniformLocAvgAmp, 
+				atomic_load_explicit(&state->avgAmp, memory_order_relaxed));
 
 		// Drawing
-		glUseProgram(state.shaderProgram);
+		glUseProgram(state->shaderProgram);
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 
-		glfwSwapBuffers(state.window);
+		glfwSwapBuffers(state->window);
 		glfwPollEvents();
 	}
 }

@@ -7,6 +7,9 @@
 #define PEAK_ALPHA_RELEASE (0.995f)
 #define AVG_ALPHA (0.2f)
 
+#define MUSIC_CONTROL_SLOW_SEC 2
+#define MUSIC_CONTROL_FAST_SEC 5
+
 #define PATH_SIZE (1024)
 #define DATA_DIR ".FreeVisualizer"
 #define SHADER_DIR "shaders"
