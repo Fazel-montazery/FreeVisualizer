@@ -45,4 +45,5 @@ fv [OPTIONS] <mp3 file>
 -S, --yt-search         Search youtube and return 10 results
 -d, --yt-dl             Download the audio of a YouTube video by title
 -f, --fullscreen        Start in fullscreen mode
+-p, --path              Use the shader at path
 ```

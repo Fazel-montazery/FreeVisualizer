@@ -1,6 +1,6 @@
 #include "opts.h"
 
-#define OP_STRING "hs:lS:d:f"
+#define OP_STRING "hs:lS:d:fp:"
 
 static const struct option opts[] = {
 	{"help", no_argument, 0, 'h'},
@@ -9,6 +9,7 @@ static const struct option opts[] = {
 	{"yt-search", required_argument, 0, 'S'},
 	{"yt-dl", required_argument, 0, 'd'},
 	{"fullscreen", no_argument, 0, 'f'},
+	{"path", required_argument, 0, 'p'},
 	{0, 0, 0, 0}
 };
 
@@ -133,6 +134,11 @@ bool parseOpts( int argc,
 
 		case 'f':
 			*fullscreen = true;
+			break;
+
+		case 'p':
+			snprintf(fragShaderPathBuf, bufferSiz, "%s", optarg);
+			sceneSet = true;
 			break;
 
 		case '?':
