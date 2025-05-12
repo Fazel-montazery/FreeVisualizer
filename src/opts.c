@@ -15,20 +15,21 @@ static const struct option opts[] = {
 #define SEARCH_COMMAND "yt-dlp --no-playlist ytsearch10:'%s official music' --get-title"
 #define DOWNLOAD_COMMAND "yt-dlp -f bestaudio --no-playlist --extract-audio --audio-format mp3 --audio-quality 0 -o '%%(title)s' 'ytsearch: %s official music'"
 
-static const char loadingChars[] = {'/', '-', '\\'};
-static int loadingCharIndx = 0;
-static volatile bool loading_should_exit = false;
-static void* loading(void *data)
+static _Atomic bool loadingShouldExit;
+static int loading(void *arg)
 {
-	loading_should_exit = false;
-	while (!loading_should_exit) {
+	const char loadingChars[] = {'/', '-', '\\'};
+	int loadingCharIndx = 0;
+
+	while (!atomic_load_explicit(&loadingShouldExit, memory_order_relaxed)) {
 		fputc(loadingChars[loadingCharIndx % 3], stdout);
 		fputc('\r', stdout);
 		fflush(stdout);
 		sleep(1);
 		loadingCharIndx++;
 	}
-	return NULL;
+
+	return 0;
 }
 
 bool parseOpts( int argc, 
@@ -95,12 +96,15 @@ bool parseOpts( int argc,
 			return false;
 
 		case 'S':
+			// Setting exit condition
+			atomic_store_explicit(&loadingShouldExit, false, memory_order_relaxed);
+
 			// Hide terminal cursor
 			printf("\033[?25l");
 			fflush(stdout);
 
-			pthread_t loadingThread;
-			pthread_create(&loadingThread, NULL, loading, NULL);
+			thrd_t loadingThread;
+			thrd_create(&loadingThread, loading, NULL);
 
 			char search[PATH_SIZE] = { 0 };
 			snprintf(search, PATH_SIZE, SEARCH_COMMAND, optarg);
@@ -109,8 +113,8 @@ bool parseOpts( int argc,
 				printf("Couldn't search youtube: %s\n", strerror(errno));
 			}
 
-			loading_should_exit = true;
-			pthread_join(loadingThread, NULL);
+			atomic_store_explicit(&loadingShouldExit, true, memory_order_relaxed);
+			thrd_join(loadingThread, NULL);
 			
 			// Show terminal cursor
 			printf("\033[?25h");
