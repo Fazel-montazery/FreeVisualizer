@@ -10,6 +10,7 @@ static const struct option opts[] = {
 	{"yt-dl", required_argument, 0, 'd'},
 	{"fullscreen", no_argument, 0, 'f'},
 	{"path", required_argument, 0, 'p'},
+	{"test", no_argument, 0, 't'},
 	{0, 0, 0, 0}
 };
 
@@ -38,7 +39,8 @@ bool parseOpts( int argc,
 		char** musicPath,
 		char* fragShaderPathBuf,
 		size_t bufferSiz,
-		bool* fullscreen
+		bool* fullscreen,
+		bool* testMode
 )
 {
 	const char* home = getHomeDir(true);
@@ -141,20 +143,16 @@ bool parseOpts( int argc,
 			sceneSet = true;
 			break;
 
+		case 't':
+			*testMode = true;
+			break;
+
 		case '?':
 			return false;
 
 		default:
 			return false;
 		}
-	}
-
-	if (optind < argc) {
-		*musicPath = argv[optind];
-	} else {
-		printf("Usage: %s [OPTIONS] <mp3 file>\n"
-			"run '%s -h' for help\n", argv[0], argv[0]);
-		return false;
 	}
 
 	if (!sceneSet) {
@@ -165,6 +163,8 @@ bool parseOpts( int argc,
 		}
 		snprintf(fragShaderPathBuf, PATH_SIZE, "%s/%s", shaderDir, sceneName);
 	}
+
+	if (*testMode) return true;
 
 	if (optind < argc) {
 		*musicPath = argv[optind];

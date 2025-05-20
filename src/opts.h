@@ -22,4 +22,5 @@ bool parseOpts( int argc,
 		char** musicPath,
 		char* fragShaderPathBuf,
 		size_t bufferSiz,
-		bool* fullscreen);
+		bool* fullscreen,
+		bool* testMode);

@@ -18,6 +18,9 @@
 // App State
 typedef struct
 {
+	// General
+	bool testMode;
+
 	// Window
 	GLFWwindow*	window;
 	int32_t		winWidth; // not in fullscreen mode
@@ -82,12 +85,13 @@ int main(int argc, char** argv)
 	signal(SIGINT, catchCtrlC);
 
 	char fragShaderPath[PATH_SIZE];
-	if (!parseOpts(argc, argv, &state.musicPath, fragShaderPath, PATH_SIZE, &state.fullscreen))
+	if (!parseOpts(argc, argv, &state.musicPath, fragShaderPath, PATH_SIZE, &state.fullscreen, &state.testMode))
 		return 0;
 
 	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
 	if (!initShaders(&state, fragShaderPath)) return -1;
-	if (!initAudio(&state)) return -1;
+	if (!state.testMode)
+		if (!initAudio(&state)) return -1;
 	loop(&state);
 	deinitApp(&state);
 	return 0;
@@ -536,11 +540,13 @@ static void loop(State* state)
 static void deinitApp(State* state)
 {
 	// Killing playback thread
-	atomic_store_explicit(&isExit, true, memory_order_relaxed);
-	mtx_lock(&state->pauseMX);
-	cnd_broadcast(&state->pauseCV);
-	mtx_unlock(&state->pauseMX);
-	thrd_join(state->musicThread, NULL);
+	if (!state->testMode) {
+		atomic_store_explicit(&isExit, true, memory_order_relaxed);
+		mtx_lock(&state->pauseMX);
+		cnd_broadcast(&state->pauseCV);
+		mtx_unlock(&state->pauseMX);
+		thrd_join(state->musicThread, NULL);
+	}
 
 	glDeleteProgram(state->shaderProgram);
 	glfwDestroyWindow(state->window);

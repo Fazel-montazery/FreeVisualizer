@@ -46,4 +46,5 @@ fv [OPTIONS] <mp3 file>
 -d, --yt-dl             Download the audio of a YouTube video by title
 -f, --fullscreen        Start in fullscreen mode
 -p, --path              Use the shader at path
+-t, --test              No audio mode, just for testing out the shaders
 ```
