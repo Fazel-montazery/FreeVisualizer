@@ -1,6 +1,6 @@
 #include "opts.h"
 
-#define OP_STRING "hs:lS:d:fp:"
+#define OP_STRING "hs:lS:d:fp:t"
 
 static const struct option opts[] = {
 	{"help", no_argument, 0, 'h'},

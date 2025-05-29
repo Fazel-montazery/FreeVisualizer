@@ -119,7 +119,7 @@ static int audio_playback_callback(void* arg)
 		return 0;
 	}
 
-	snd_pcm_t* pcmHandle = alsa_open(info.channels, (unsigned) info.samplerate, SF_TRUE);
+	snd_pcm_t* pcmHandle = alsa_open(info.channels, (unsigned) info.samplerate, SF_FALSE);
 	if (!pcmHandle) {
 		atomic_store_explicit(&isExit, true, memory_order_relaxed);
 		return 0;
