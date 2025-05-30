@@ -9,6 +9,7 @@
 
 #define MUSIC_CONTROL_SLOW_SEC 2
 #define MUSIC_CONTROL_FAST_SEC 5
+#define AMP_SCALE_CONTROL_UNIT 1 // scales back to 0.1 when converted to float
 
 #define PATH_SIZE (1024)
 #define DATA_DIR ".FreeVisualizer"

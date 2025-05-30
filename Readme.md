@@ -37,6 +37,15 @@ sudo make uninstall
 ```bash
 fv [OPTIONS] <mp3 file>
 ```
+## Hotkeys
+```
+**Q/Esc**               (Exit)
+**F**                   (Toggle fullscreen)
+**Space**               (Pause/Resume)
+**Right/Left**          (seek 2s)
+**Up/Down**             (seek 5s)
+**]/[**                 (Change Amplitude scale stronger/weaker)
+```
 ### Options
 ```
 -h, --help				Print help

@@ -40,6 +40,7 @@ typedef struct
 	_Atomic int	seekNow;
 	_Atomic float	peakAmp;
 	_Atomic float	avgAmp;
+	_Atomic int	ampScale;
 
 	// Shaders
 	GLuint		vertShader;
@@ -80,6 +81,7 @@ int main(int argc, char** argv)
 	atomic_store_explicit(&state.seekNow, 0, memory_order_relaxed);
 	atomic_store_explicit(&state.peakAmp, 0.0, memory_order_relaxed);
 	atomic_store_explicit(&state.avgAmp, 0.0, memory_order_relaxed);
+	atomic_store_explicit(&state.ampScale, 10, memory_order_relaxed); // 10 * 0.1 = 1.0
 
 	// Setting up the Ctrl+C signal
 	signal(SIGINT, catchCtrlC);
@@ -331,6 +333,12 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 	else if (key == GLFW_KEY_DOWN && action == GLFW_PRESS) {
 		atomic_fetch_sub_explicit(&state->seekNow, MUSIC_CONTROL_FAST_SEC, memory_order_relaxed);
 	}
+	else if (key == GLFW_KEY_RIGHT_BRACKET && action == GLFW_PRESS) {
+		atomic_fetch_add_explicit(&state->ampScale, AMP_SCALE_CONTROL_UNIT, memory_order_relaxed);
+	}
+	else if (key == GLFW_KEY_LEFT_BRACKET && action == GLFW_PRESS) {
+		atomic_fetch_sub_explicit(&state->ampScale, AMP_SCALE_CONTROL_UNIT, memory_order_relaxed);
+	}
 }
 
 static void clearLineAnsi()
@@ -523,9 +531,11 @@ static void loop(State* state)
 		glUniform2f(state->uniformLocMouse, mouseXpos, mouseYpos);
 		glUniform1f(state->uniformLocTime, glfwGetTime());
 		glUniform1f(state->uniformLocPeakAmp, 
-				atomic_load_explicit(&state->peakAmp, memory_order_relaxed));
+				atomic_load_explicit(&state->peakAmp, memory_order_relaxed) *
+				atomic_load_explicit(&state->ampScale, memory_order_relaxed) * 0.1);
 		glUniform1f(state->uniformLocAvgAmp, 
-				atomic_load_explicit(&state->avgAmp, memory_order_relaxed));
+				atomic_load_explicit(&state->avgAmp, memory_order_relaxed) *
+				atomic_load_explicit(&state->ampScale, memory_order_relaxed) * 0.1);
 
 		// Drawing
 		glUseProgram(state->shaderProgram);
