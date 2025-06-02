@@ -1,11 +1,15 @@
 #version 330 core
 
 // -~ Uniforms ~-
-uniform uvec2 Resolution;
-uniform vec2 Mouse;
-uniform float Time;
-uniform float PeakAmp;
-uniform float AvgAmp;
+uniform uvec2	Resolution;
+uniform vec2	Mouse;
+uniform float	Time;
+uniform float	PeakAmp;
+uniform float	AvgAmp;
+uniform vec3	Color1;
+uniform vec3	Color2;
+uniform vec3	Color3;
+uniform vec3	Color4;
 
 // -~ Output ~-
 out vec4 FragColor;

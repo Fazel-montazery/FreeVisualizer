@@ -51,6 +51,11 @@ typedef struct
 	GLint		uniformLocTime;
 	GLint		uniformLocPeakAmp;
 	GLint		uniformLocAvgAmp;
+	GLint		uniformLocColor1;
+	GLint		uniformLocColor2;
+	GLint		uniformLocColor3;
+	GLint		uniformLocColor4;
+	vec3		colors[NUM_COLORS];
 
 } State;
 
@@ -87,8 +92,13 @@ int main(int argc, char** argv)
 	signal(SIGINT, catchCtrlC);
 
 	char fragShaderPath[PATH_SIZE];
-	if (!parseOpts(argc, argv, &state.musicPath, fragShaderPath, PATH_SIZE, &state.fullscreen, &state.testMode))
+	if (!parseOpts(argc, argv, 
+			&state.musicPath, 
+			fragShaderPath, PATH_SIZE, 
+			&state.fullscreen, &state.testMode,
+			state.colors)) {
 		return 0;
+	}
 
 	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
 	if (!initShaders(&state, fragShaderPath)) return -1;
@@ -121,7 +131,7 @@ static int audio_playback_callback(void* arg)
 		return 0;
 	}
 
-	snd_pcm_t* pcmHandle = alsa_open(info.channels, (unsigned) info.samplerate, SF_FALSE);
+	snd_pcm_t* pcmHandle = alsa_open(info.channels, (unsigned) info.samplerate, SF_TRUE);
 	if (!pcmHandle) {
 		atomic_store_explicit(&isExit, true, memory_order_relaxed);
 		return 0;
@@ -457,12 +467,25 @@ static bool initShaders(State* state, const char* fragShaderPath)
 	glDeleteShader(state->vertShader);
 	glDeleteShader(state->fragShader);
 
+	glUseProgram(state->shaderProgram);
+
 	// Retriving uniform locations
 	state->uniformLocResolution = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_RESOLUTION);
 	state->uniformLocMouse = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_MOUSE);
 	state->uniformLocTime = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_TIME);
 	state->uniformLocPeakAmp = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_PEAKAMP);
 	state->uniformLocAvgAmp = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_AVGAMP);
+	state->uniformLocColor1 = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_COLOR1);
+	state->uniformLocColor2 = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_COLOR2);
+	state->uniformLocColor3 = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_COLOR3);
+	state->uniformLocColor4 = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_COLOR4);
+
+	// Uploading colors (as they are const)
+	glUniform3f(state->uniformLocColor1, state->colors[0][0], state->colors[0][1], state->colors[0][2]);
+	glUniform3f(state->uniformLocColor2, state->colors[1][0], state->colors[1][1], state->colors[1][2]);
+	glUniform3f(state->uniformLocColor3, state->colors[2][0], state->colors[2][1], state->colors[2][2]);
+	glUniform3f(state->uniformLocColor4, state->colors[3][0], state->colors[3][1], state->colors[3][2]);
+	
 
 	return true;
 }
@@ -538,7 +561,6 @@ static void loop(State* state)
 				atomic_load_explicit(&state->ampScale, memory_order_relaxed) * 0.1);
 
 		// Drawing
-		glUseProgram(state->shaderProgram);
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 
 		glfwSwapBuffers(state->window);

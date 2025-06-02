@@ -10,11 +10,15 @@
 #define DOUBLE_PI 6.28318530718
 
 // -~ Uniforms ~-
-uniform uvec2 Resolution;
-uniform vec2 Mouse;
-uniform float Time;
-uniform float PeakAmp;
-uniform float AvgAmp;
+uniform uvec2	Resolution;
+uniform vec2	Mouse;
+uniform float	Time;
+uniform float	PeakAmp;
+uniform float	AvgAmp;
+uniform vec3	Color1;
+uniform vec3	Color2;
+uniform vec3	Color3;
+uniform vec3	Color4;
 
 // -~ Output ~-
 out vec4 FragColor;
@@ -95,12 +99,6 @@ vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d)
 	return a + b * cos(DOUBLE_PI * (c * t + d));
 }
 
-// -~ Constants ~-
-const vec3 color1 = vec3(0.610, 0.498, 0.650);
-const vec3 color2 = vec3(0.388, 0.498, 0.350);
-const vec3 color3 = vec3(0.530, 0.498, 0.620);
-const vec3 color4 = vec3(3.438, 3.012, 4.025);
-
 void main() 
 {
 	vec2 uv = (gl_FragCoord.xy * 2.0 - Resolution) / Resolution.y;
@@ -125,6 +123,6 @@ void main()
 		if (t >  MAX_TOTAL_DISTANCE) break;
 	}
 
-	vec3 col = ray.color * 0.2 * palette(length(uv), color1, color2, color3, color4);
+	vec3 col = ray.color * 0.2 * palette(length(uv), Color1, Color2, Color3, Color4);
 	FragColor = vec4(col, 1.0);
 }

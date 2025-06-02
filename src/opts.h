@@ -23,4 +23,5 @@ bool parseOpts( int argc,
 		char* fragShaderPathBuf,
 		size_t bufferSiz,
 		bool* fullscreen,
-		bool* testMode);
+		bool* testMode,
+		vec3 colors[NUM_COLORS]);

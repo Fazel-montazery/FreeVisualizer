@@ -1,6 +1,13 @@
 #include "opts.h"
 
-#define OP_STRING "hs:lS:d:fp:t"
+#define OP_STRING "hs:lS:d:fp:tc:"
+
+static const vec3 default_colors[NUM_COLORS] = {
+	{0.610, 0.498, 0.650},
+	{0.388, 0.498, 0.350},
+	{0.530, 0.498, 0.620},
+	{3.438, 3.012, 4.025}
+};
 
 static const struct option opts[] = {
 	{"help", no_argument, 0, 'h'},
@@ -11,6 +18,7 @@ static const struct option opts[] = {
 	{"fullscreen", no_argument, 0, 'f'},
 	{"path", required_argument, 0, 'p'},
 	{"test", no_argument, 0, 't'},
+	{"color", required_argument, 0, 'c'},
 	{0, 0, 0, 0}
 };
 
@@ -34,14 +42,55 @@ static int loading(void *arg)
 	return 0;
 }
 
+// Parse the colors in str and put them in c, else copy the default colors
+// Yeah it's ugly :)
+static void parseColors(const char* str, vec3 c[NUM_COLORS])
+{
+	int i = 0;
+	char* colors = NULL;
+
+	if (!str) goto final;
+
+	colors = strdup(str);
+	if (!colors) goto final;
+
+	char* token = strtok(colors, " \t\n\v\f\r");
+	while (token && i < NUM_COLORS) {
+		if (strlen(token) != 7) {
+			goto final;
+		}
+
+		char num[3] = { 0 };
+		num[0] = token[1]; num[1] = token[2];
+		c[i][0] = (strtol(num, NULL, 16) / 255.0);
+		num[0] = token[3]; num[1] = token[4];
+		c[i][1] = (strtol(num, NULL, 16) / 255.0);
+		num[0] = token[5]; num[1] = token[6];
+		c[i][2] = (strtol(num, NULL, 16) / 255.0);
+
+		i++;
+		token = strtok(NULL, " \t\n\v\f\r");
+	}
+
+final:
+	while (i < NUM_COLORS) {
+		c[i][0] = default_colors[i][0];
+		c[i][1] = default_colors[i][1];
+		c[i][2] = default_colors[i][2];
+		i++;
+	}
+
+	if (colors) free(colors);
+}
+
 bool parseOpts( int argc, 
 		char *argv[],
 		char** musicPath,
 		char* fragShaderPathBuf,
 		size_t bufferSiz,
 		bool* fullscreen,
-		bool* testMode
-)
+		bool* testMode,
+		vec3 colors[NUM_COLORS])
 {
 	const char* home = getHomeDir(true);
 	if (!home)
@@ -57,6 +106,10 @@ bool parseOpts( int argc,
 	int indx = 0;
 
 	*fullscreen = false;
+
+	// Setting default colors
+	// I'm going for less code and using this to set default colors in case not specified
+	parseColors(NULL, colors);
 
 	while ((opt = getopt_long(argc, argv, OP_STRING, opts, &indx)) != -1) {
 		switch (opt) {
@@ -145,6 +198,10 @@ bool parseOpts( int argc,
 
 		case 't':
 			*testMode = true;
+			break;
+
+		case 'c':
+			parseColors(optarg, colors);
 			break;
 
 		case '?':

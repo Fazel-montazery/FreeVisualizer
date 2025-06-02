@@ -24,3 +24,10 @@
 #define UNIFORM_NAME_TIME "Time"
 #define UNIFORM_NAME_PEAKAMP "PeakAmp"
 #define UNIFORM_NAME_AVGAMP "AvgAmp"
+#define NUM_COLORS 4
+#define UNIFORM_NAME_COLOR1 "Color1"
+#define UNIFORM_NAME_COLOR2 "Color2"
+#define UNIFORM_NAME_COLOR3 "Color3"
+#define UNIFORM_NAME_COLOR4 "Color4"
+
+typedef float vec3[3];
