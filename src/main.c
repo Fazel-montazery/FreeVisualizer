@@ -270,13 +270,13 @@ static void resumeAudio(State* state)
 }
 
 #ifndef NDEBUG
-static void glfw_error_callback(int error, const char* description)
+static void glfwErrorCallback(int error, const char* description)
 {
 	fprintf(stderr, "Error: %s\n", description);
 }
 #endif
 
-static void glfw_framebuffer_size_callback(GLFWwindow* window, int width, int height)
+static void glfwFramebufferSizeCallback(GLFWwindow* window, int width, int height)
 {
 	State* state = glfwGetWindowUserPointer(window);
 
@@ -285,6 +285,8 @@ static void glfw_framebuffer_size_callback(GLFWwindow* window, int width, int he
 		state->winWidth = width;
 		state->winHeight = height;
 	}
+
+	glUniform2ui(state->uniformLocResolution, width, height);
 }
 
 static void glfwWindowPosCallback(GLFWwindow* window, int xpos, int ypos) 
@@ -296,7 +298,13 @@ static void glfwWindowPosCallback(GLFWwindow* window, int xpos, int ypos)
 	}
 }
 
-static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+static void glfwCursorPosCallback(GLFWwindow* window, double xpos, double ypos)
+{
+	State* state = glfwGetWindowUserPointer(window);
+	glUniform2f(state->uniformLocMouse, xpos, ypos);
+}
+
+static void glfwKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
 	State* state = glfwGetWindowUserPointer(window);
 
@@ -364,7 +372,7 @@ static bool initWindow(State* state, const int32_t width, const int32_t height)
 	state->winHeight = height;
 
 #ifndef NDEBUG
-	glfwSetErrorCallback(glfw_error_callback);
+	glfwSetErrorCallback(glfwErrorCallback);
 #endif
 
 	if (!glfwInit())
@@ -423,9 +431,10 @@ static bool initWindow(State* state, const int32_t width, const int32_t height)
 		glfwSetWindowPos(state->window, xpos, ypos);
 
 	glfwMakeContextCurrent(state->window);
-	glfwSetFramebufferSizeCallback(state->window, glfw_framebuffer_size_callback);
+	glfwSetFramebufferSizeCallback(state->window, glfwFramebufferSizeCallback);
 	glfwSetWindowPosCallback(state->window, glfwWindowPosCallback);
-	glfwSetKeyCallback(state->window, glfw_key_callback);
+	glfwSetKeyCallback(state->window, glfwKeyCallback);
+	glfwSetCursorPosCallback(state->window, glfwCursorPosCallback);
 
 	// setting v-sync
 	glfwSwapInterval(1);
@@ -542,16 +551,7 @@ static void loop(State* state)
 				state->duration);
 		fflush(stdout);
 
-		// Retriving Resolution and mouse pos
-		int fbWidth, fbHeight;
-		glfwGetFramebufferSize(state->window, &fbWidth, &fbHeight);
-
-		double mouseXpos, mouseYpos;
-		glfwGetCursorPos(state->window, &mouseXpos, &mouseYpos);
-
 		// Uploading uniforms
-		glUniform2ui(state->uniformLocResolution, fbWidth, fbHeight);
-		glUniform2f(state->uniformLocMouse, mouseXpos, mouseYpos);
 		glUniform1f(state->uniformLocTime, glfwGetTime());
 		glUniform1f(state->uniformLocPeakAmp, 
 				atomic_load_explicit(&state->peakAmp, memory_order_relaxed) *
