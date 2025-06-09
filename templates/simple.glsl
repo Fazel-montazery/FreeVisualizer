@@ -5,7 +5,7 @@ uniform uvec2	Resolution;
 uniform vec2	Mouse;
 uniform float	Time;
 uniform float	PeakAmp;
-uniform float	AvgAmp;
+uniform float	AvgAmp; // Smoother
 uniform vec3	Color1;
 uniform vec3	Color2;
 uniform vec3	Color3;
