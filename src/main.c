@@ -20,6 +20,10 @@ typedef struct
 {
 	// General
 	bool testMode;
+	double currentTime;
+	double prevCursorTime;
+	bool isCursorHidden;
+	bool isCursorInside;
 
 	// Window
 	GLFWwindow*	window;
@@ -302,6 +306,15 @@ static void glfwCursorPosCallback(GLFWwindow* window, double xpos, double ypos)
 {
 	State* state = glfwGetWindowUserPointer(window);
 	glUniform2f(state->uniformLocMouse, xpos, ypos);
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+	state->isCursorHidden = false;
+	state->prevCursorTime = state->currentTime;
+}
+
+static void glfwCursorEnterCallback(GLFWwindow* window, int entered) 
+{
+	State* state = glfwGetWindowUserPointer(window);
+	state->isCursorInside = (entered == GLFW_TRUE);
 }
 
 static void glfwKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
@@ -435,6 +448,7 @@ static bool initWindow(State* state, const int32_t width, const int32_t height)
 	glfwSetWindowPosCallback(state->window, glfwWindowPosCallback);
 	glfwSetKeyCallback(state->window, glfwKeyCallback);
 	glfwSetCursorPosCallback(state->window, glfwCursorPosCallback);
+	glfwSetCursorEnterCallback(state->window, glfwCursorEnterCallback);
 
 	// setting v-sync
 	glfwSwapInterval(1);
@@ -540,6 +554,9 @@ static void loop(State* state)
 
 	while (!glfwWindowShouldClose(state->window) && !atomic_load_explicit(&isExit, memory_order_relaxed))
 	{
+		// Updating current time
+		state->currentTime = glfwGetTime();
+
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
@@ -552,7 +569,7 @@ static void loop(State* state)
 		fflush(stdout);
 
 		// Uploading uniforms
-		glUniform1f(state->uniformLocTime, glfwGetTime());
+		glUniform1f(state->uniformLocTime, state->currentTime);
 		glUniform1f(state->uniformLocPeakAmp, 
 				atomic_load_explicit(&state->peakAmp, memory_order_relaxed) *
 				atomic_load_explicit(&state->ampScale, memory_order_relaxed) * 0.1);
@@ -565,6 +582,13 @@ static void loop(State* state)
 
 		glfwSwapBuffers(state->window);
 		glfwPollEvents();
+
+		if (!state->isCursorHidden && 
+		    (state->currentTime - state->prevCursorTime) > CURSOR_INACTIVE_LIMIT &&
+		     state->isCursorInside) {
+			state->isCursorHidden = true;
+			glfwSetInputMode(state->window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+		}
 	}
 }
 
