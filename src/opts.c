@@ -125,6 +125,10 @@ bool parseOpts( int argc,
 			printf("  %-20s%s\n", "-S, --yt-search", "Search youtube and return 10 results");
 			printf("  %-20s%s\n", "-d, --yt-dl", "Download the audio of a YouTube video by title");
 			printf("  %-20s%s\n", "-f, --fullscreen", "Start in fullscreen mode");
+			printf("  %-20s%s\n", "-p, --path", "Use the shader at path");
+			printf("  %-20s%s\n", "-t, --test", "No audio mode, just for testing out the shaders");
+			printf("  %-20s%s\n", "-c, --color", 
+				"use Custom colors in the string: \"#FF0000 #0000FF #00FF00 $FFFFFF\" (max 4)");
 			return false;
 
 		case 's':
