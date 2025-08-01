@@ -1,6 +1,6 @@
 #include "opts.h"
 
-#define OP_STRING "hs:lS:d:fp:tc:"
+#define OP_STRING "hs:lS:d:fp:tc:v:"
 
 static const vec3 default_colors[NUM_COLORS] = {
 	{0.610, 0.498, 0.650},
@@ -19,6 +19,7 @@ static const struct option opts[] = {
 	{"path", required_argument, 0, 'p'},
 	{"test", no_argument, 0, 't'},
 	{"color", required_argument, 0, 'c'},
+	{"sub", required_argument, 0, 'v'},
 	{0, 0, 0, 0}
 };
 
@@ -205,7 +206,13 @@ bool parseOpts( int argc,
 			break;
 
 		case 'c':
-			parseColors(optarg, colors);
+			if (optarg)
+				parseColors(optarg, colors);
+			break;
+
+		case 'v':
+			if (optarg)
+				process_srt(optarg);
 			break;
 
 		case '?':

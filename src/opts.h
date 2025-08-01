@@ -12,6 +12,7 @@
 
 #include "defs.h"
 #include "fs.h"
+#include "../rust/srt_parse/srt_parse.h"
 
 // returns false if exit condition, else true
 // caller must allocate fragShaderPathBuf

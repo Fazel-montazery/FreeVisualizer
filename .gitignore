@@ -2,3 +2,5 @@ fv
 COMMIT_DRAFT.md
 *.mp3
 templates/run.sh
+*.srt
+rust/srt_parse/target/
