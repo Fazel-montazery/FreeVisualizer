@@ -211,8 +211,24 @@ bool parseOpts( int argc,
 			break;
 
 		case 'v':
-			if (optarg)
-				process_srt(optarg);
+			if (optarg) {
+				uintptr_t sections_size = 0;
+				SrtSection* sections = process_srt(optarg, &sections_size);
+				if (!sections) break;
+				for (uintptr_t i = 0; i < sections_size; i++) {
+					printf("%d\n%d::%d::%d::%d => %d::%d::%d::%d\n", 
+							sections[i].num,
+							sections[i].period.start.h,
+							sections[i].period.start.m,
+							sections[i].period.start.s,
+							sections[i].period.start.ms,
+							sections[i].period.end.h,
+							sections[i].period.end.m,
+							sections[i].period.end.s,
+							sections[i].period.end.ms);
+				}
+				free_srt(sections, sections_size);
+			}
 			break;
 
 		case '?':
