@@ -19,5 +19,10 @@ typedef struct SrtSection {
 	SrtTimePeriod	period;
 } SrtSection;
 
-SrtSection* process_srt(const char* path, uintptr_t* len_dst);
-void free_srt(SrtSection* sections, uintptr_t len);
+typedef struct SrtHandle {
+	uintptr_t	sections_len;
+	SrtSection*	sections;
+} SrtHandle;
+
+SrtHandle process_srt(const char* path);
+void free_srt(SrtHandle);

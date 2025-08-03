@@ -23,6 +23,12 @@ pub struct Section {
     period: TimePeriod,
 }
 
+#[repr(C)]
+pub struct SrtHandle {
+    sections_len: usize,
+    sections_ptr: *mut Section,
+}
+
 // Helper
 fn break_sections(srt_text: String) -> Vec<String> {
     let lines = srt_text.trim().lines();
@@ -143,6 +149,11 @@ fn parse_sections(sections_text: Vec<String>) -> Vec<Section> {
             continue;
         }
 
+        let mut rem = String::new();
+        for r in section_lines {
+            rem.push_str(r);
+        }
+
         sections.push(Section {
             num: section_num,
             period: section_time_period,
@@ -154,42 +165,49 @@ fn parse_sections(sections_text: Vec<String>) -> Vec<Section> {
 
 // Main interface
 #[unsafe(no_mangle)]
-pub extern "C" fn process_srt(path: *const c_char, out_len: *mut usize) -> *mut Section {
+pub extern "C" fn process_srt(path: *const c_char) -> SrtHandle {
+    let mut srt_handle: SrtHandle = SrtHandle {
+        sections_len: 0,
+        sections_ptr: std::ptr::null_mut(),
+    };
+
     let path = unsafe { CStr::from_ptr(path) };
-    let path = path.to_str().expect("Unicode conversion failed.");
+    let path = match path.to_str() {
+        Ok(str) => str,
+        Err(_) => {
+            println!("srt_parse::Unicode conversion failed.");
+            return srt_handle;
+        }
+    };
 
     let srt_text = match fs::read_to_string(path) {
         Ok(str) => str,
         Err(err) => {
-            println!("There was a problem reading {} => {}", path, err);
-            return std::ptr::null_mut();
+            println!("srt_parse::There was a problem reading {} => {}", path, err);
+            return srt_handle;
         }
     };
 
     let sections_text: Vec<String> = break_sections(srt_text);
     let mut sections: Vec<Section> = parse_sections(sections_text);
     sections.shrink_to_fit();
-    let len = sections.len();
-    unsafe {
-        if !out_len.is_null() {
-            *out_len = len;
-        }
-    }
-
+    srt_handle.sections_len = sections.len();
     let ptr = sections.as_mut_ptr();
     std::mem::forget(sections);
+    srt_handle.sections_ptr = ptr;
 
-    ptr
+    srt_handle
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn free_srt(ptr: *mut Section, len: usize) {
-    if ptr.is_null() {
+pub extern "C" fn free_srt(srt_handle: SrtHandle) {
+    if srt_handle.sections_ptr.is_null() {
         return;
     }
 
     unsafe {
-        let slice: &mut [Section] = std::slice::from_raw_parts_mut(ptr, len);
+        let slice: &mut [Section] =
+            std::slice::from_raw_parts_mut(srt_handle.sections_ptr, srt_handle.sections_len);
         let boxed: Box<[Section]> = Box::from_raw(slice);
         drop(boxed);
     }
