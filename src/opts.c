@@ -130,6 +130,7 @@ bool parseOpts( int argc,
 			printf("  %-20s%s\n", "-t, --test", "No audio mode, just for testing out the shaders");
 			printf("  %-20s%s\n", "-c, --color", 
 				"use Custom colors in the string: \"#FF0000 #0000FF #00FF00 $FFFFFF\" (max 4)");
+			printf("  %-20s%s\n", "-v, --sub", "provide a [.srt] subtitle file"); 
 			return false;
 
 		case 's':
@@ -213,10 +214,10 @@ bool parseOpts( int argc,
 		case 'v':
 			if (optarg) {
 				SrtHandle srt_handle = process_srt(optarg);
-				if (!srt_handle.sections) break;
-				for (uintptr_t i = 0; i < srt_handle.sections_len; i++) {
-					printf("%d\n", srt_handle.sections[i].num);
-				}
+				if (!srt_handle.sections || !srt_handle.str_pool) break;
+				fwrite(srt_handle.str_pool, 1, srt_handle.str_len, stdout);
+				putchar('\n');
+				fflush(stdout);
 				free_srt(srt_handle);
 			}
 			break;

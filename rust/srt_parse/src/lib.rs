@@ -27,6 +27,8 @@ pub struct Section {
 pub struct SrtHandle {
     sections_len: usize,
     sections_ptr: *mut Section,
+    str_len: usize,
+    str_pool: *mut u8,
 }
 
 // Helper
@@ -53,8 +55,10 @@ fn break_sections(srt_text: String) -> Vec<String> {
     sections
 }
 
-fn parse_sections(sections_text: Vec<String>) -> Vec<Section> {
+// Return a vector of sections and the string pool of all actual texts in the sections
+fn parse_sections(sections_text: Vec<String>) -> (Vec<Section>, String) {
     let mut sections: Vec<Section> = Vec::new();
+    let mut str_pool: String = String::new();
 
     for section_text in sections_text {
         let section_num: u32;
@@ -149,9 +153,9 @@ fn parse_sections(sections_text: Vec<String>) -> Vec<Section> {
             continue;
         }
 
-        let mut rem = String::new();
         for r in section_lines {
-            rem.push_str(r);
+            str_pool.push_str(r);
+            str_pool.push('\n');
         }
 
         sections.push(Section {
@@ -160,7 +164,9 @@ fn parse_sections(sections_text: Vec<String>) -> Vec<Section> {
         });
     }
 
-    sections
+    str_pool.pop();
+
+    (sections, str_pool)
 }
 
 // Main interface
@@ -169,6 +175,8 @@ pub extern "C" fn process_srt(path: *const c_char) -> SrtHandle {
     let mut srt_handle: SrtHandle = SrtHandle {
         sections_len: 0,
         sections_ptr: std::ptr::null_mut(),
+        str_len: 0,
+        str_pool: std::ptr::null_mut(),
     };
 
     let path = unsafe { CStr::from_ptr(path) };
@@ -189,12 +197,19 @@ pub extern "C" fn process_srt(path: *const c_char) -> SrtHandle {
     };
 
     let sections_text: Vec<String> = break_sections(srt_text);
-    let mut sections: Vec<Section> = parse_sections(sections_text);
+    let (mut sections, mut str_pool) = parse_sections(sections_text);
+
     sections.shrink_to_fit();
     srt_handle.sections_len = sections.len();
-    let ptr = sections.as_mut_ptr();
+    let sections_ptr = sections.as_mut_ptr();
     std::mem::forget(sections);
-    srt_handle.sections_ptr = ptr;
+    srt_handle.sections_ptr = sections_ptr;
+
+    str_pool.shrink_to_fit();
+    srt_handle.str_len = str_pool.len();
+    let str_ptr = str_pool.as_mut_ptr();
+    std::mem::forget(str_pool);
+    srt_handle.str_pool = str_ptr;
 
     srt_handle
 }
@@ -209,6 +224,17 @@ pub extern "C" fn free_srt(srt_handle: SrtHandle) {
         let slice: &mut [Section] =
             std::slice::from_raw_parts_mut(srt_handle.sections_ptr, srt_handle.sections_len);
         let boxed: Box<[Section]> = Box::from_raw(slice);
+        drop(boxed);
+    }
+
+    if srt_handle.str_pool.is_null() {
+        return;
+    }
+
+    unsafe {
+        let slice: &mut [u8] =
+            std::slice::from_raw_parts_mut(srt_handle.str_pool, srt_handle.str_len);
+        let boxed: Box<[u8]> = Box::from_raw(slice);
         drop(boxed);
     }
 }

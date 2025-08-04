@@ -3,25 +3,27 @@
 #include <stdint.h>
 
 typedef struct SrtTimeStamp {
-	uint32_t h;
-	uint32_t m;
-	uint32_t s;
-	uint32_t ms;
+	const uint32_t h;
+	const uint32_t m;
+	const uint32_t s;
+	const uint32_t ms;
 } SrtTimeStamp;
 
 typedef struct SrtTimePeriod {
-	SrtTimeStamp start;
-	SrtTimeStamp end;
+	const SrtTimeStamp start;
+	const SrtTimeStamp end;
 } SrtTimePeriod;
 
 typedef struct SrtSection {
-	uint32_t	num;
-	SrtTimePeriod	period;
+	const uint32_t		num;
+	const SrtTimePeriod	period;
 } SrtSection;
 
 typedef struct SrtHandle {
-	uintptr_t	sections_len;
-	SrtSection*	sections;
+	const uintptr_t		sections_len;
+	const SrtSection*	sections;
+	const uintptr_t		str_len;
+	const uint8_t*		str_pool;
 } SrtHandle;
 
 SrtHandle process_srt(const char* path);
