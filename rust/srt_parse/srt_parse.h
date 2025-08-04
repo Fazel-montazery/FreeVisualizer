@@ -17,12 +17,14 @@ typedef struct SrtTimePeriod {
 typedef struct SrtSection {
 	const uint32_t		num;
 	const SrtTimePeriod	period;
+	const uintptr_t		str_start;
+	const uintptr_t		str_len;
 } SrtSection;
 
 typedef struct SrtHandle {
 	const uintptr_t		sections_len;
 	const SrtSection*	sections;
-	const uintptr_t		str_len;
+	const uintptr_t		str_pool_len;
 	const uint8_t*		str_pool;
 } SrtHandle;
 

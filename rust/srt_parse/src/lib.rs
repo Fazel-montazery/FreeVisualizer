@@ -21,13 +21,15 @@ pub struct TimePeriod {
 pub struct Section {
     num: u32,
     period: TimePeriod,
+    str_start: usize, // In str_pool
+    str_len: usize,
 }
 
 #[repr(C)]
 pub struct SrtHandle {
     sections_len: usize,
     sections_ptr: *mut Section,
-    str_len: usize,
+    str_pool_len: usize,
     str_pool: *mut u8,
 }
 
@@ -153,14 +155,20 @@ fn parse_sections(sections_text: Vec<String>) -> (Vec<Section>, String) {
             continue;
         }
 
+        let str_pool_len_pre = str_pool.len();
+
         for r in section_lines {
             str_pool.push_str(r);
             str_pool.push('\n');
         }
 
+        let str_pool_len_next = str_pool.len();
+
         sections.push(Section {
             num: section_num,
             period: section_time_period,
+            str_start: str_pool_len_pre,
+            str_len: str_pool_len_next - str_pool_len_pre - 1,
         });
     }
 
@@ -175,7 +183,7 @@ pub extern "C" fn process_srt(path: *const c_char) -> SrtHandle {
     let mut srt_handle: SrtHandle = SrtHandle {
         sections_len: 0,
         sections_ptr: std::ptr::null_mut(),
-        str_len: 0,
+        str_pool_len: 0,
         str_pool: std::ptr::null_mut(),
     };
 
@@ -206,7 +214,7 @@ pub extern "C" fn process_srt(path: *const c_char) -> SrtHandle {
     srt_handle.sections_ptr = sections_ptr;
 
     str_pool.shrink_to_fit();
-    srt_handle.str_len = str_pool.len();
+    srt_handle.str_pool_len = str_pool.len();
     let str_ptr = str_pool.as_mut_ptr();
     std::mem::forget(str_pool);
     srt_handle.str_pool = str_ptr;
@@ -233,7 +241,7 @@ pub extern "C" fn free_srt(srt_handle: SrtHandle) {
 
     unsafe {
         let slice: &mut [u8] =
-            std::slice::from_raw_parts_mut(srt_handle.str_pool, srt_handle.str_len);
+            std::slice::from_raw_parts_mut(srt_handle.str_pool, srt_handle.str_pool_len);
         let boxed: Box<[u8]> = Box::from_raw(slice);
         drop(boxed);
     }

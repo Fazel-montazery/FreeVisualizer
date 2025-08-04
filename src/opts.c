@@ -215,9 +215,14 @@ bool parseOpts( int argc,
 			if (optarg) {
 				SrtHandle srt_handle = process_srt(optarg);
 				if (!srt_handle.sections || !srt_handle.str_pool) break;
-				fwrite(srt_handle.str_pool, 1, srt_handle.str_len, stdout);
-				putchar('\n');
-				fflush(stdout);
+				for (uintptr_t i = 0; i < srt_handle.sections_len; i++) {
+					const uintptr_t str_start = srt_handle.sections[i].str_start;
+					const uintptr_t str_len = srt_handle.sections[i].str_len;
+					fwrite(&srt_handle.str_pool[str_start], 1, str_len, stdout);
+					putchar('\n');
+					putchar('\n');
+					fflush(stdout);
+				}
 				free_srt(srt_handle);
 			}
 			break;
