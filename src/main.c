@@ -510,6 +510,9 @@ static bool initShaders(State* state, const char* fragShaderPath)
 	glUniform3f(state->uniformLocColor4, state->colors[3][0], state->colors[3][1], state->colors[3][2]);
 	
 
+	// First time glViewport and Resolution uniform upload
+	glfwFramebufferSizeCallback(state->window, state->winWidth, state->winHeight);
+
 	return true;
 }
 

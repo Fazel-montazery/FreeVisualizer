@@ -17,7 +17,7 @@ typedef struct SrtTimePeriod {
 typedef struct SrtSection {
 	const uint32_t		num;
 	const SrtTimePeriod	period;
-	const uintptr_t		str_start;
+	const uintptr_t		str_start; // In the str_pool
 	const uintptr_t		str_len;
 } SrtSection;
 
