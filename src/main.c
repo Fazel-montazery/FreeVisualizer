@@ -4,6 +4,7 @@
 
 #include <threads.h>
 #include <stdatomic.h>
+
 #include <signal.h>
 #include <math.h>
 
@@ -14,59 +15,10 @@
 #include "opts.h"
 #include "shader.h"
 #include "sound.h"
+#include "state.h"
 
 #include "ft2build.h"
 #include FT_FREETYPE_H
-
-// App State
-typedef struct
-{
-	// General
-	bool testMode;
-	double currentTime;
-	double prevCursorTime;
-	bool isCursorHidden;
-	bool isCursorInside;
-	bool renderSub;
-	SrtHandle srtHandle; // Only valid when renderSub == true
-
-	// Window
-	GLFWwindow*	window;
-	int32_t		winWidth; // not in fullscreen mode
-	int32_t		winHeight; // not in fullscreen mode
-	int32_t		winPosX;
-	int32_t		winPosY;
-	bool		fullscreen;
-
-	// Music
-	char*		musicPath;
-	thrd_t		musicThread;
-	mtx_t		pauseMX;
-	cnd_t		pauseCV;
-	bool		isPaused;
-	int		duration;
-	_Atomic int	positionSec;
-	_Atomic int	seekNow;
-	_Atomic float	peakAmp;
-	_Atomic float	avgAmp;
-	_Atomic int	ampScale;
-
-	// Shaders
-	GLuint		vertShader;
-	GLuint		fragShader;
-	GLuint		shaderProgram;
-	GLint		uniformLocResolution;
-	GLint		uniformLocMouse;
-	GLint		uniformLocTime;
-	GLint		uniformLocPeakAmp;
-	GLint		uniformLocAvgAmp;
-	GLint		uniformLocColor1;
-	GLint		uniformLocColor2;
-	GLint		uniformLocColor3;
-	GLint		uniformLocColor4;
-	vec3		colors[NUM_COLORS];
-
-} State;
 
 // Blueprints
 static bool initWindow(State* state, const int32_t width, const int32_t height);
@@ -100,18 +52,11 @@ int main(int argc, char** argv)
 	// Setting up the Ctrl+C signal
 	signal(SIGINT, catchCtrlC);
 
-	char fragShaderPath[PATH_SIZE];
-	if (!parseOpts(argc, argv, 
-			&state.musicPath, 
-			fragShaderPath, PATH_SIZE, 
-			&state.fullscreen, &state.testMode, 
-			&state.renderSub, &state.srtHandle,
-			state.colors)) {
+	if (!parseOpts(argc, argv, &state))
 		return 0;
-	}
 
 	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
-	if (!initShaders(&state, fragShaderPath)) return -1;
+	if (!initShaders(&state, state.fragShaderPath)) return -1;
 	if (!state.testMode)
 		if (!initAudio(&state)) return -1;
 	loop(&state);

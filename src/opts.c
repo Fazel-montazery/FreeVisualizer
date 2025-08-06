@@ -84,16 +84,7 @@ final:
 	if (colors) free(colors);
 }
 
-bool parseOpts( int argc, 
-		char *argv[],
-		char** musicPath,
-		char* fragShaderPathBuf,
-		size_t bufferSiz,
-		bool* fullscreen,
-		bool* testMode,
-		bool* renderSub,
-		SrtHandle* srtHandle,
-		vec3 colors[NUM_COLORS])
+bool parseOpts( int argc, char *argv[], State* state)
 {
 	const char* home = getHomeDir(true);
 	if (!home)
@@ -108,12 +99,12 @@ bool parseOpts( int argc,
 	int opt;
 	int indx = 0;
 
-	*fullscreen = false;
-	*renderSub = false;
+	state->fullscreen = false;
+	state->renderSub = false;
 
 	// Setting default colors
 	// I'm going for less code and using this to set default colors in case not specified
-	parseColors(NULL, colors);
+	parseColors(NULL, state->colors);
 
 	while ((opt = getopt_long(argc, argv, OP_STRING, opts, &indx)) != -1) {
 		switch (opt) {
@@ -151,7 +142,7 @@ bool parseOpts( int argc,
 				return false;
 			}
 
-			snprintf(fragShaderPathBuf, bufferSiz, "%s", scenePath);
+			snprintf(state->fragShaderPath, PATH_SIZE, "%s", scenePath);
 			sceneSet = true;
 
 			break;
@@ -197,29 +188,29 @@ bool parseOpts( int argc,
 			return false;
 
 		case 'f':
-			*fullscreen = true;
+			state->fullscreen = true;
 			break;
 
 		case 'p':
-			snprintf(fragShaderPathBuf, bufferSiz, "%s", optarg);
+			snprintf(state->fragShaderPath, PATH_SIZE, "%s", optarg);
 			sceneSet = true;
 			break;
 
 		case 't':
-			*testMode = true;
+			state->testMode = true;
 			break;
 
 		case 'c':
 			if (optarg)
-				parseColors(optarg, colors);
+				parseColors(optarg, state->colors);
 			break;
 
 		case 'v':
 			if (optarg) {
 				SrtHandle srt_handle = process_srt(optarg);
 				if (!srt_handle.sections || !srt_handle.str_pool) break;
-				*renderSub = true;
-				*srtHandle = srt_handle;
+				state->renderSub = true;
+				state->srtHandle = srt_handle;
 			}
 			break;
 
@@ -237,13 +228,13 @@ bool parseOpts( int argc,
 			fprintf(stderr, "No scene found!\n");
 			return false;
 		}
-		snprintf(fragShaderPathBuf, PATH_SIZE, "%s/%s", shaderDir, sceneName);
+		snprintf(state->fragShaderPath, PATH_SIZE, "%s/%s", shaderDir, sceneName);
 	}
 
-	if (*testMode) return true;
+	if (state->testMode) return true;
 
 	if (optind < argc) {
-		*musicPath = argv[optind];
+		state->musicPath = argv[optind];
 	} else {
 		printf("Usage: %s [OPTIONS] <mp3 file>\n"
 			"run '%s -h' for help\n", argv[0], argv[0]);

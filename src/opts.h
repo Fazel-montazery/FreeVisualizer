@@ -13,18 +13,10 @@
 #include "defs.h"
 #include "fs.h"
 #include "../rust/srt_parse/srt_parse.h"
+#include "state.h"
 
 // returns false if exit condition, else true
 // caller must allocate fragShaderPathBuf
 // bufferSiz is the size of fragShaderPathBuf
 // musicPath is just a pointer, not a buffer. You should pass a char** to it
-bool parseOpts( int argc, 
-		char *argv[],
-		char** musicPath,
-		char* fragShaderPathBuf,
-		size_t bufferSiz,
-		bool* fullscreen,
-		bool* testMode,
-		bool* renderSub,
-		SrtHandle* srtHandle,
-		vec3 colors[NUM_COLORS]);
+bool parseOpts( int argc, char *argv[], State* state);

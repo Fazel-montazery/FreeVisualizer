@@ -23,6 +23,7 @@ debug: ${SRC}
 	${CC} -o ${TARGET} ${SRC} ${LIBS} ${FLAGS_DEBUG}
 
 install: ${TARGET}
+	strip ${TARGET}
 	install -d ${BINDIR}
 	install -m 755 ${TARGET} ${BINDIR}/${TARGET}
 	rm -rf ${SHADERDIR}
