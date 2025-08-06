@@ -7,7 +7,7 @@ DATADIR ?= ${USR_HOME}/.FreeVisualizer
 SHADERDIR := ${DATADIR}/shaders
 SHADERS := shaders/*
 
-SRC := src/main.c src/opts.c src/fs.c src/glad.c src/shader.c src/sound.c
+SRC := src/main.c src/opts.c src/fs.c src/glad.c src/shader.c src/sound.c src/srt_parse.c
 LIBS := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl -lasound -lsndfile rust/srt_parse/target/release/libsrt_parse.a -Iinclude/freetype/include -Linclude/freetype/lib -lfreetype
 CC := gcc
 TARGET := fv

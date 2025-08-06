@@ -558,9 +558,7 @@ static void deinitApp(State* state)
 		thrd_join(state->musicThread, NULL);
 	}
 
-	if (state->renderSub) {
-		free_srt(state->srtHandle);
-	}
+	free_srt(state->srtHandle);
 
 	glDeleteProgram(state->shaderProgram);
 	glfwDestroyWindow(state->window);

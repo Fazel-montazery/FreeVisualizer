@@ -2,6 +2,10 @@
 
 #include <stdint.h>
 
+#define SRT_MS_IN_H 3600000
+#define SRT_MS_IN_M 60000
+#define SRT_MS_IN_S 1000
+
 typedef struct SrtTimeStamp {
 	const uint32_t h;
 	const uint32_t m;
@@ -28,5 +32,7 @@ typedef struct SrtHandle {
 	uint8_t*		str_pool;
 } SrtHandle;
 
-SrtHandle process_srt(const char* path); // from rust
-void free_srt(SrtHandle); // from rust
+SrtHandle process_srt(const char* path); // from Rust
+void free_srt(SrtHandle); // from Rust
+bool isTimeInPeriod(const SrtTimeStamp current, const SrtTimePeriod period); // from C
+uint32_t getSectionIndexByTime(const SrtHandle* srtHandle, const SrtTimeStamp current); // from C

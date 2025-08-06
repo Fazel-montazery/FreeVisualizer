@@ -86,21 +86,21 @@ final:
 
 bool parseOpts( int argc, char *argv[], State* state)
 {
-	const char* home = getHomeDir(true);
-	if (!home)
-		return false;
-
-	char shaderDir[PATH_SIZE] = { 0 };
-	snprintf(shaderDir, PATH_SIZE, "%s/%s/%s", home, DATA_DIR, SHADER_DIR);
-	if (!dirExists(shaderDir, true))
-		return false;
-
 	bool sceneSet = false;
 	int opt;
 	int indx = 0;
 
 	state->fullscreen = false;
 	state->renderSub = false;
+
+	const char* home = getHomeDir(true);
+	if (!home)
+		goto return_false;
+
+	char shaderDir[PATH_SIZE] = { 0 };
+	snprintf(shaderDir, PATH_SIZE, "%s/%s/%s", home, DATA_DIR, SHADER_DIR);
+	if (!dirExists(shaderDir, true))
+		goto return_false;
 
 	// Setting default colors
 	// I'm going for less code and using this to set default colors in case not specified
@@ -125,7 +125,7 @@ bool parseOpts( int argc, char *argv[], State* state)
 			printf("  %-20s%s\n", "-c, --color", 
 				"use Custom colors in the string: \"#FF0000 #0000FF #00FF00 $FFFFFF\" (max 4)");
 			printf("  %-20s%s\n", "-v, --sub", "provide a [.srt] subtitle file"); 
-			return false;
+			goto return_false;
 
 		case 's':
 			char scenePath[PATH_SIZE] = { 0 };
@@ -137,9 +137,9 @@ bool parseOpts( int argc, char *argv[], State* state)
 
 				if (!printFilesInDir(shaderDir, false)) {
 					printf("Couldn't list scenes: %s\n", strerror(errno));
-					return false;
+					goto return_false;
 				}
-				return false;
+				goto return_false;
 			}
 
 			snprintf(state->fragShaderPath, PATH_SIZE, "%s", scenePath);
@@ -149,7 +149,7 @@ bool parseOpts( int argc, char *argv[], State* state)
 
 		case 'l':
 			printFilesInDir(shaderDir, true);
-			return false;
+			goto return_false;
 
 		case 'S':
 			// Setting exit condition
@@ -175,7 +175,7 @@ bool parseOpts( int argc, char *argv[], State* state)
 			// Show terminal cursor
 			printf("\033[?25h");
 			fflush(stdout);
-			return false;
+			goto return_false;
 
 		case 'd':
 			char download[PATH_SIZE] = { 0 };
@@ -185,7 +185,7 @@ bool parseOpts( int argc, char *argv[], State* state)
 				printf("Couldn't download from youtube: %s\n", strerror(errno));
 			}
 
-			return false;
+			goto return_false;
 
 		case 'f':
 			state->fullscreen = true;
@@ -208,17 +208,17 @@ bool parseOpts( int argc, char *argv[], State* state)
 		case 'v':
 			if (optarg) {
 				SrtHandle srt_handle = process_srt(optarg);
-				if (!srt_handle.sections || !srt_handle.str_pool) break;
+				if (!srt_handle.sections || !srt_handle.str_pool || srt_handle.sections_len == 0) break;
 				state->renderSub = true;
 				state->srtHandle = srt_handle;
 			}
 			break;
 
 		case '?':
-			return false;
+			goto return_false;
 
 		default:
-			return false;
+			goto return_false;
 		}
 	}
 
@@ -226,7 +226,7 @@ bool parseOpts( int argc, char *argv[], State* state)
 		char sceneName[PATH_SIZE / 4];
 		if (!pickRandFile(shaderDir, sceneName, PATH_SIZE / 4, false)) {
 			fprintf(stderr, "No scene found!\n");
-			return false;
+			goto return_false;
 		}
 		snprintf(state->fragShaderPath, PATH_SIZE, "%s/%s", shaderDir, sceneName);
 	}
@@ -238,8 +238,14 @@ bool parseOpts( int argc, char *argv[], State* state)
 	} else {
 		printf("Usage: %s [OPTIONS] <mp3 file>\n"
 			"run '%s -h' for help\n", argv[0], argv[0]);
-		return false;
+
+		goto return_false;
 	}
 
 	return true;
+
+return_false: // for deallocation in case of early exit
+	free_srt(state->srtHandle);
+	return false;
+
 }
