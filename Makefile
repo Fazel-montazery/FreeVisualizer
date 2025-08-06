@@ -8,7 +8,7 @@ SHADERDIR := ${DATADIR}/shaders
 SHADERS := shaders/*
 
 SRC := src/main.c src/opts.c src/fs.c src/glad.c src/shader.c src/sound.c
-LIBS := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl -lasound -lsndfile rust/srt_parse/target/release/libsrt_parse.a
+LIBS := -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl -lasound -lsndfile rust/srt_parse/target/release/libsrt_parse.a -Iinclude/freetype/include -Linclude/freetype/lib -lfreetype
 CC := gcc
 TARGET := fv
 FLAGS_RELEASE := -Wall -O2 -DNDEBUG

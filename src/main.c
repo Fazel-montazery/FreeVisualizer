@@ -15,6 +15,9 @@
 #include "shader.h"
 #include "sound.h"
 
+#include "ft2build.h"
+#include FT_FREETYPE_H
+
 // App State
 typedef struct
 {
