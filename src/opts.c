@@ -91,6 +91,8 @@ bool parseOpts( int argc,
 		size_t bufferSiz,
 		bool* fullscreen,
 		bool* testMode,
+		bool* renderSub,
+		SrtHandle* srtHandle,
 		vec3 colors[NUM_COLORS])
 {
 	const char* home = getHomeDir(true);
@@ -107,6 +109,7 @@ bool parseOpts( int argc,
 	int indx = 0;
 
 	*fullscreen = false;
+	*renderSub = false;
 
 	// Setting default colors
 	// I'm going for less code and using this to set default colors in case not specified
@@ -215,7 +218,8 @@ bool parseOpts( int argc,
 			if (optarg) {
 				SrtHandle srt_handle = process_srt(optarg);
 				if (!srt_handle.sections || !srt_handle.str_pool) break;
-				free_srt(srt_handle);
+				*renderSub = true;
+				*srtHandle = srt_handle;
 			}
 			break;
 

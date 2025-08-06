@@ -22,11 +22,11 @@ typedef struct SrtSection {
 } SrtSection;
 
 typedef struct SrtHandle {
-	const uintptr_t		sections_len;
-	const SrtSection*	sections;
-	const uintptr_t		str_pool_len;
-	const uint8_t*		str_pool;
+	uintptr_t		sections_len;
+	SrtSection*		sections;
+	uintptr_t		str_pool_len;
+	uint8_t*		str_pool;
 } SrtHandle;
 
-SrtHandle process_srt(const char* path);
-void free_srt(SrtHandle);
+SrtHandle process_srt(const char* path); // from rust
+void free_srt(SrtHandle); // from rust

@@ -27,6 +27,8 @@ typedef struct
 	double prevCursorTime;
 	bool isCursorHidden;
 	bool isCursorInside;
+	bool renderSub;
+	SrtHandle srtHandle; // Only valid when renderSub == true
 
 	// Window
 	GLFWwindow*	window;
@@ -102,7 +104,8 @@ int main(int argc, char** argv)
 	if (!parseOpts(argc, argv, 
 			&state.musicPath, 
 			fragShaderPath, PATH_SIZE, 
-			&state.fullscreen, &state.testMode,
+			&state.fullscreen, &state.testMode, 
+			&state.renderSub, &state.srtHandle,
 			state.colors)) {
 		return 0;
 	}
@@ -608,6 +611,10 @@ static void deinitApp(State* state)
 		cnd_broadcast(&state->pauseCV);
 		mtx_unlock(&state->pauseMX);
 		thrd_join(state->musicThread, NULL);
+	}
+
+	if (state->renderSub) {
+		free_srt(state->srtHandle);
 	}
 
 	glDeleteProgram(state->shaderProgram);

@@ -25,4 +25,6 @@ bool parseOpts( int argc,
 		size_t bufferSiz,
 		bool* fullscreen,
 		bool* testMode,
+		bool* renderSub,
+		SrtHandle* srtHandle,
 		vec3 colors[NUM_COLORS]);
