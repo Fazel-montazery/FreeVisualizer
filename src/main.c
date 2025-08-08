@@ -516,9 +516,17 @@ static void loop(State* state)
 
 		// Printing duration and position
 		clearLineAnsi();
+
+		const int currentSecs = atomic_load_explicit(&state->positionSec, memory_order_relaxed);
+
+		if (state->renderSub) {
+			SrtTimeStamp currentTs = convertSecsToSrtTs(currentSecs);
+			SrtSection* currentSection = getSectionByTime(&state->srtHandle, currentTs);
+		}
+
 		fprintf(stdout, "[%s] %d/%d seconds",
 				(state->isPaused) ? "Paused" : "Playing",
-				atomic_load_explicit(&state->positionSec, memory_order_relaxed),
+				currentSecs,
 				state->duration);
 		fflush(stdout);
 
