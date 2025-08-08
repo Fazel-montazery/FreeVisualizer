@@ -29,7 +29,7 @@ typedef struct SrtSection {
 } SrtSection;
 
 typedef struct SrtHandle {
-	uintptr_t		sections_len;
+	uintptr_t		sections_len; // Minimum == 1
 	SrtSection*		sections;
 	uintptr_t		str_pool_len;
 	uint8_t*		str_pool;

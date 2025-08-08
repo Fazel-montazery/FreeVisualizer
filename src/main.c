@@ -522,7 +522,6 @@ static void loop(State* state)
 		if (state->renderSub) {
 			SrtTimeStamp currentTs = convertSecsToSrtTs(currentSecs);
 			SrtSection* currentSection = getSectionByTime(&state->srtHandle, currentTs);
-			fwrite(&state->srtHandle.str_pool[currentSection->str_start], sizeof(uint8_t), currentSection->str_len, stdout);
 		}
 
 		fprintf(stdout, "[%s] %d/%d seconds",

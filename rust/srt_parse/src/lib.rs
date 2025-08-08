@@ -3,6 +3,7 @@ use std::fs;
 use std::os::raw::c_char;
 
 // Types
+#[derive(Default)]
 #[repr(C)]
 pub struct TimeStamp {
     h: u32,
@@ -11,12 +12,14 @@ pub struct TimeStamp {
     ms: u32,
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct TimePeriod {
     start: TimeStamp,
     end: TimeStamp,
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct Section {
     num: u32,
@@ -60,6 +63,8 @@ fn break_sections(srt_text: String) -> Vec<String> {
 // Return a vector of sections and the string pool of all actual texts in the sections
 fn parse_sections(sections_text: Vec<String>) -> (Vec<Section>, String) {
     let mut sections: Vec<Section> = Vec::new();
+    sections.push(Section::default()); // Always an empty section at the start
+
     let mut str_pool: String = String::new();
 
     for section_text in sections_text {

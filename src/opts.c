@@ -208,7 +208,7 @@ bool parseOpts( int argc, char *argv[], State* state)
 		case 'v':
 			if (optarg) {
 				SrtHandle srt_handle = process_srt(optarg);
-				if (!srt_handle.sections || !srt_handle.str_pool || srt_handle.sections_len == 0) break;
+				if (!srt_handle.sections || !srt_handle.str_pool || srt_handle.sections_len == 1) break;
 				state->renderSub = true;
 				state->srtHandle = srt_handle;
 			}
