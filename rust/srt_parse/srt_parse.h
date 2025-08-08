@@ -17,8 +17,8 @@ typedef struct SrtTimeStamp {
 } SrtTimeStamp;
 
 typedef struct SrtTimePeriod {
-	const SrtTimeStamp start;
-	const SrtTimeStamp end;
+	SrtTimeStamp start;
+	SrtTimeStamp end;
 } SrtTimePeriod;
 
 typedef struct SrtSection {

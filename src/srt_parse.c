@@ -1,5 +1,9 @@
 #include "../rust/srt_parse/srt_parse.h"
 
+// To optimize the binary search in getSectionByTime()
+static SrtTimePeriod preTimePeriod = { 0 };
+static uint32_t preSectionIndex = 0;
+
 static uint64_t total_ms(const SrtTimeStamp srtTimeStamp) 
 {
 	return ((uint64_t) srtTimeStamp.h * SRT_MS_IN_H) + ((uint64_t) srtTimeStamp.m * SRT_MS_IN_M) + 
@@ -26,6 +30,10 @@ static int isTimeInPeriod(const SrtTimeStamp current, const SrtTimePeriod period
 // Also no null return, just returning the first element when nothing found
 SrtSection* getSectionByTime(const SrtHandle* srtHandle, const SrtTimeStamp current)
 {
+	// ignore the computation if we are already in the period
+	if (isTimeInPeriod(current, preTimePeriod) == 0)
+		return &(srtHandle->sections[preSectionIndex]);
+
 	uint32_t start = 0;
 	uint32_t end = srtHandle->sections_len - 1;
 
@@ -38,10 +46,14 @@ SrtSection* getSectionByTime(const SrtHandle* srtHandle, const SrtTimeStamp curr
 		} else if (res == 1) {
 			start = mid + 1;
 		} else {
+			preTimePeriod = srtHandle->sections[mid].period;
+			preSectionIndex = mid;
 			return &(srtHandle->sections[mid]);
 		}
 	}
 
+	preTimePeriod = srtHandle->sections[0].period;
+	preSectionIndex = 0;
 	return &(srtHandle->sections[0]);
 }
 
