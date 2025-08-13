@@ -7,6 +7,8 @@
 
 #define FOV 1.0
 
+#define NORM_EPSILON 0.001
+
 // -~ Uniforms ~-
 uniform uvec2	Resolution;
 uniform vec2	Mouse;
@@ -38,6 +40,18 @@ float march(in vec3 p)
 {
 	float s = sphereSDF(p, 0.5);
 	return s;
+}
+
+vec3 calcNormal(in vec3 p)
+{
+	float d = march(p);
+	vec2 delta = vec2(0.0, NORM_EPSILON);
+
+	float xd = march(p + delta.yxx);
+	float yd = march(p + delta.xyx);
+	float zd = march(p + delta.xxy);
+
+	return (normalize(vec3(xd, yd, zd) - d) + 1.0) * 0.5;
 }
 
 void main()
