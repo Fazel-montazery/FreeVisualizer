@@ -17,9 +17,6 @@
 #include "sound.h"
 #include "state.h"
 
-#include "ft2build.h"
-#include FT_FREETYPE_H
-
 // Blueprints
 static bool initWindow(State* state, const int32_t width, const int32_t height);
 static bool initShaders(State* state, const char* fragShaderPath);
