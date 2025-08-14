@@ -31,9 +31,36 @@ struct Ray
 };
 
 // -~ Helpers ~-
+mat2 rot2D(float angle) 
+{
+	float s = sin(angle);
+	float c = cos(angle);
+	return mat2(c, -s, s,  c);
+}
+
 float sphereSDF(in vec3 p, in float rad)
 {
 	return length(p) - rad;
+}
+
+float circleSDF(in vec2 p, in float rad)
+{
+	return length(p) - rad;
+}
+
+float boxSDF3D(in vec3 p, in vec3 dems)
+{
+	return length(max(abs(p) - dems, 0.0));
+}
+
+float boxSDF2D(in vec2 p, in vec2 dems)
+{
+	return length(max(abs(p) - dems, 0.0));
+}
+
+float ringSDF2D(in vec2 p, in float r, in float width)
+{
+	return abs(circleSDF(p, r)) - width;
 }
 
 float march(in vec3 p) 
