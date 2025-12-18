@@ -1,6 +1,6 @@
 #include "opts.h"
 
-#define OP_STRING "hs:lS:d:fp:tc:v:"
+#define OP_STRING "hs:lS:d:fp:tc:rv:"
 
 static const vec3 default_colors[NUM_COLORS] = {
 	{0.610, 0.498, 0.650},
@@ -19,6 +19,7 @@ static const struct option opts[] = {
 	{"path", required_argument, 0, 'p'},
 	{"test", no_argument, 0, 't'},
 	{"color", required_argument, 0, 'c'},
+	{"random", no_argument, 0, 'r'},
 	{"sub", required_argument, 0, 'v'},
 	{0, 0, 0, 0}
 };
@@ -123,8 +124,9 @@ bool parseOpts( int argc, char *argv[], State* state)
 			printf("  %-20s%s\n", "-p, --path", "Use the shader at path");
 			printf("  %-20s%s\n", "-t, --test", "No audio mode, just for testing out the shaders");
 			printf("  %-20s%s\n", "-c, --color", 
-				"use Custom colors in the string: \"#FF0000 #0000FF #00FF00 $FFFFFF\" (max 4)");
-			printf("  %-20s%s\n", "-v, --sub", "provide a [.srt] subtitle file"); 
+				"Use Custom colors in the string: \"#FF0000 #0000FF #00FF00 $FFFFFF\" (max 4)");
+			printf("  %-20s%s\n", "-r, --random", "Random color pallet"); 
+			printf("  %-20s%s\n", "-v, --sub", "Provide a [.srt] subtitle file"); 
 			goto return_false;
 
 		case 's':
@@ -203,6 +205,15 @@ bool parseOpts( int argc, char *argv[], State* state)
 		case 'c':
 			if (optarg)
 				parseColors(optarg, state->colors);
+			break;
+
+		case 'r':
+			srand(time(NULL));
+			for (int i = 0; i < NUM_COLORS; i++) {
+				state->colors[i][0] = (float)rand() / RAND_MAX;
+				state->colors[i][1] = (float)rand() / RAND_MAX;
+				state->colors[i][2] = (float)rand() / RAND_MAX;
+			}
 			break;
 
 		case 'v':

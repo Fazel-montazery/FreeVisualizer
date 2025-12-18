@@ -56,6 +56,7 @@ fv [OPTIONS] <mp3 file>
 -f, --fullscreen        Start in fullscreen mode
 -p, --path              Use the shader at path
 -t, --test              No audio mode, just for testing out the shaders
--c, --color             use Custom colors in the string: "#FF0000 #0000FF #00FF00 $FFFFFF" (max 4)
--v, --sub               provide a [.srt] subtitle file
+-c, --color             Use Custom colors in the string: "#FF0000 #0000FF #00FF00 $FFFFFF" (max 4)
+-r, --random            Random color pallet 
+-v, --sub               Provide a [.srt] subtitle file
 ```

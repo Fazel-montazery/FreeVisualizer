@@ -17,9 +17,11 @@ FLAGS_DEBUG := -Wall -O0 -g3 -fsanitize=address
 all: main
 
 main: ${SRC}
+	cargo build --release --manifest-path ./rust/srt_parse/Cargo.toml
 	${CC} -o ${TARGET} ${SRC} ${LIBS} ${FLAGS_RELEASE}
 
 debug: ${SRC}
+	cargo build --release --manifest-path ./rust/srt_parse/Cargo.toml
 	${CC} -o ${TARGET} ${SRC} ${LIBS} ${FLAGS_DEBUG}
 
 install: ${TARGET}
