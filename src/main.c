@@ -318,6 +318,13 @@ static void glfwKeyCallback(GLFWwindow* window, int key, int scancode, int actio
 	else if (key == GLFW_KEY_LEFT_BRACKET && action == GLFW_PRESS) {
 		atomic_fetch_sub_explicit(&state->ampScale, AMP_SCALE_CONTROL_UNIT, memory_order_relaxed);
 	}
+	else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+		randColors(state);
+		glUniform3f(state->uniformLocColor1, state->colors[0][0], state->colors[0][1], state->colors[0][2]);
+		glUniform3f(state->uniformLocColor2, state->colors[1][0], state->colors[1][1], state->colors[1][2]);
+		glUniform3f(state->uniformLocColor3, state->colors[2][0], state->colors[2][1], state->colors[2][2]);
+		glUniform3f(state->uniformLocColor4, state->colors[3][0], state->colors[3][1], state->colors[3][2]);
+	}
 }
 
 static void clearLineAnsi()

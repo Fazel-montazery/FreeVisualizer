@@ -45,6 +45,7 @@ fv [OPTIONS] <mp3 file>
 **Right/Left**          (seek 2s)
 **Up/Down**             (seek 5s)
 **]/[**                 (Change Amplitude scale stronger/weaker)
+**R**                   (refresh random colors)
 ```
 ### Options
 ```

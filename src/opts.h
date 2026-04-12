@@ -15,8 +15,13 @@
 #include "../rust/srt_parse/srt_parse.h"
 #include "state.h"
 
+// Radomize colors
+void randColors(State* state);
+
 // returns false if exit condition, else true
 // caller must allocate fragShaderPathBuf
 // bufferSiz is the size of fragShaderPathBuf
 // musicPath is just a pointer, not a buffer. You should pass a char** to it
 bool parseOpts( int argc, char *argv[], State* state);
+
+

@@ -85,8 +85,19 @@ final:
 	if (colors) free(colors);
 }
 
+void randColors(State* state)
+{
+	for (int i = 0; i < NUM_COLORS; i++) {
+		state->colors[i][0] = (float)rand() / RAND_MAX;
+		state->colors[i][1] = (float)rand() / RAND_MAX;
+		state->colors[i][2] = (float)rand() / RAND_MAX;
+	}
+}
+
 bool parseOpts( int argc, char *argv[], State* state)
 {
+	srand(time(NULL)); // changing seed for every run
+
 	bool sceneSet = false;
 	int opt;
 	int indx = 0;
@@ -208,12 +219,7 @@ bool parseOpts( int argc, char *argv[], State* state)
 			break;
 
 		case 'r':
-			srand(time(NULL));
-			for (int i = 0; i < NUM_COLORS; i++) {
-				state->colors[i][0] = (float)rand() / RAND_MAX;
-				state->colors[i][1] = (float)rand() / RAND_MAX;
-				state->colors[i][2] = (float)rand() / RAND_MAX;
-			}
+			randColors(state);
 			break;
 
 		case 'v':
