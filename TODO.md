@@ -1,3 +1,5 @@
+Refactor audioPlaybackCallback.
+Use simd instructios for signal proccessing.
 Make it react to Treble/Bass/Mid separatly.
 Key to seek to start.
 Improve the Performance(get rid of length() and sin()) of shaders.

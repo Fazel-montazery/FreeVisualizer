@@ -42,10 +42,11 @@ fv [OPTIONS] <mp3 file>
 **Q/Esc**               (Exit)
 **F**                   (Toggle fullscreen)
 **Space**               (Pause/Resume)
-**Right/Left**          (seek 2s)
-**Up/Down**             (seek 5s)
+**Right/Left**          (Seek 2s)
+**Up/Down**             (Seek 5s)
 **]/[**                 (Change Amplitude scale stronger/weaker)
-**R**                   (refresh random colors)
+**R**                   (Refresh random colors)
+**S**                   (Seek to start)
 ```
 ### Options
 ```

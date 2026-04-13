@@ -141,7 +141,11 @@ static int audio_playback_callback(void* arg)
 
 			int seek = atomic_load_explicit(&state->seekNow, memory_order_relaxed);
 			if (seek) {
-				sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
+				if (seek == MUSIC_CONTROL_SEEK_START) {
+					sf_seek(sndFile, 0, SEEK_SET);
+				} else {
+					sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
+				}
 				atomic_store_explicit(&state->seekNow, 0, memory_order_relaxed);
 			}
 
@@ -189,7 +193,11 @@ static int audio_playback_callback(void* arg)
 
 			int seek = atomic_load_explicit(&state->seekNow, memory_order_relaxed);
 			if (seek) {
-				sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
+				if (seek == MUSIC_CONTROL_SEEK_START) {
+					sf_seek(sndFile, 0, SEEK_SET);
+				} else {
+					sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
+				}
 				atomic_store_explicit(&state->seekNow, 0, memory_order_relaxed);
 			}
 
@@ -324,6 +332,9 @@ static void glfwKeyCallback(GLFWwindow* window, int key, int scancode, int actio
 		glUniform3f(state->uniformLocColor2, state->colors[1][0], state->colors[1][1], state->colors[1][2]);
 		glUniform3f(state->uniformLocColor3, state->colors[2][0], state->colors[2][1], state->colors[2][2]);
 		glUniform3f(state->uniformLocColor4, state->colors[3][0], state->colors[3][1], state->colors[3][2]);
+	}
+	else if (key == GLFW_KEY_S && action == GLFW_PRESS) {
+		atomic_store_explicit(&state->seekNow, MUSIC_CONTROL_SEEK_START, memory_order_relaxed);
 	}
 }
 
