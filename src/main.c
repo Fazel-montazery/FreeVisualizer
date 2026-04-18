@@ -13,6 +13,7 @@
 
 #include "defs.h"
 #include "opts.h"
+#include "fs.h"
 #include "shader.h"
 #include "sound.h"
 #include "state.h"
@@ -24,6 +25,8 @@ static bool initAudio(State* state);
 static void loop(State* state);
 static void deinitApp(State* state);
 static void catchCtrlC(int sig);
+static void readSavedColors(State* state);
+static void writeSavedColors(State* state);
 
 // Globs
 static _Atomic bool isExit;
@@ -52,6 +55,8 @@ int main(int argc, char** argv)
 	if (!parseOpts(argc, argv, &state))
 		return 0;
 
+	readSavedColors(&state);
+
 	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
 	if (!initShaders(&state, state.fragShaderPath)) return -1;
 	if (!state.testMode)
@@ -62,6 +67,57 @@ int main(int argc, char** argv)
 }
 
 // Helper functions
+static void uploadColorsUniform(State* state)
+{
+	glUniform3f(state->uniformLocColor1, state->colors[0][0], state->colors[0][1], state->colors[0][2]);
+	glUniform3f(state->uniformLocColor2, state->colors[1][0], state->colors[1][1], state->colors[1][2]);
+	glUniform3f(state->uniformLocColor3, state->colors[2][0], state->colors[2][1], state->colors[2][2]);
+	glUniform3f(state->uniformLocColor4, state->colors[3][0], state->colors[3][1], state->colors[3][2]);
+}
+
+static void readSavedColors(State* state)
+{
+	for (int i = 0; i < NUM_SAVED_COLORS; i++)
+		copyDefaultColors(state->savedColors[i]);
+
+	char* colors = loadFileToStr(state->savedColorsPath);
+	if (!colors) {
+		fprintf(stdout, "Continuing without any previous fav colors...\n");
+	} else {
+		char* token = strtok(colors, " \t\n\v\f\r");
+		int i = 0;
+		while (token && (i < NUM_SAVED_COLORS)) {
+			for (int j = 0; (j < NUM_COLORS) && token; j++) {
+				for (int k = 0; (k < 3) && token; k++) {
+					state->savedColors[i][j][k] = atof(token);
+					token = strtok(NULL, " \t\n\v\f\r");
+				}
+			}
+			i++;
+		}
+		free(colors);
+	}
+}
+
+static void writeSavedColors(State* state)
+{
+	FILE* f = fopen(state->savedColorsPath, "w");
+	if (!f) {
+		fprintf(stdout, "Couldn't open file [%s] => %s\n", state->savedColorsPath, strerror(errno));
+		fprintf(stdout, "Couldn't Save fav colors!\n");
+	} else {
+		for (int i = 0; i < NUM_SAVED_COLORS; i++) {
+			for (int j = 0; j < NUM_COLORS; j++) {
+				fprintf(f, "%f %f %f ", state->savedColors[i][j][0],
+							state->savedColors[i][j][1],
+							state->savedColors[i][j][2]);
+			}
+			fputc('\n', f);
+		}
+		fclose(f);
+	}
+}
+
 static int audio_playback_callback(void* arg)
 {
 	State* state = arg;
@@ -277,13 +333,14 @@ static void glfwKeyCallback(GLFWwindow* window, int key, int scancode, int actio
 {
 	State* state = glfwGetWindowUserPointer(window);
 
-	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+	if (action == GLFW_PRESS) {
+	if (key == GLFW_KEY_ESCAPE) {
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
 	}
-	else if (key == GLFW_KEY_Q && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_Q) {
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
 	}
-	else if (key == GLFW_KEY_F && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_F) {
 		GLFWmonitor* primary = glfwGetPrimaryMonitor();
 		if (!primary) return;
 		const GLFWvidmode* mode = glfwGetVideoMode(primary);
@@ -302,40 +359,55 @@ static void glfwKeyCallback(GLFWwindow* window, int key, int scancode, int actio
 			state->fullscreen = true;
 		}
 	}
-	else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_SPACE) {
 		if (state->isPaused)
 			resumeAudio(state);
 		else
 			pauseAudio(state);
 	}
-	else if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_RIGHT) {
 		atomic_fetch_add_explicit(&state->seekNow, MUSIC_CONTROL_SLOW_SEC, memory_order_relaxed);
 	}
-	else if (key == GLFW_KEY_LEFT && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_LEFT) {
 		atomic_fetch_sub_explicit(&state->seekNow, MUSIC_CONTROL_SLOW_SEC, memory_order_relaxed);
 	}
-	else if (key == GLFW_KEY_UP && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_UP) {
 		atomic_fetch_add_explicit(&state->seekNow, MUSIC_CONTROL_FAST_SEC, memory_order_relaxed);
 	}
-	else if (key == GLFW_KEY_DOWN && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_DOWN) {
 		atomic_fetch_sub_explicit(&state->seekNow, MUSIC_CONTROL_FAST_SEC, memory_order_relaxed);
 	}
-	else if (key == GLFW_KEY_RIGHT_BRACKET && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_RIGHT_BRACKET) {
 		atomic_fetch_add_explicit(&state->ampScale, AMP_SCALE_CONTROL_UNIT, memory_order_relaxed);
 	}
-	else if (key == GLFW_KEY_LEFT_BRACKET && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_LEFT_BRACKET) {
 		atomic_fetch_sub_explicit(&state->ampScale, AMP_SCALE_CONTROL_UNIT, memory_order_relaxed);
 	}
-	else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_R) {
 		randColors(state);
-		glUniform3f(state->uniformLocColor1, state->colors[0][0], state->colors[0][1], state->colors[0][2]);
-		glUniform3f(state->uniformLocColor2, state->colors[1][0], state->colors[1][1], state->colors[1][2]);
-		glUniform3f(state->uniformLocColor3, state->colors[2][0], state->colors[2][1], state->colors[2][2]);
-		glUniform3f(state->uniformLocColor4, state->colors[3][0], state->colors[3][1], state->colors[3][2]);
+		uploadColorsUniform(state);
 	}
-	else if (key == GLFW_KEY_S && action == GLFW_PRESS) {
+	else if (key == GLFW_KEY_S) {
 		atomic_store_explicit(&state->seekNow, MUSIC_CONTROL_SEEK_START, memory_order_relaxed);
 	}
+	else if (FVGLFW_NUMS_KEY_CONDITION(key)) {
+		int num = FVGLFW_NUMS_KEY_INT(key);
+		if (mods & GLFW_MOD_SHIFT) {
+			for (int i = 0; i < NUM_COLORS; i++) {
+				state->savedColors[num][i][0] = state->colors[i][0];
+				state->savedColors[num][i][1] = state->colors[i][1];
+				state->savedColors[num][i][2] = state->colors[i][2];
+			}
+		} else {
+			for (int i = 0; i < NUM_COLORS; i++) {
+				state->colors[i][0] = state->savedColors[num][i][0];
+				state->colors[i][1] = state->savedColors[num][i][1];
+				state->colors[i][2] = state->savedColors[num][i][2];
+			}
+			uploadColorsUniform(state);
+		}
+	}
+	} // if (action == GLFW_PRESS)
 }
 
 static void clearLineAnsi()
@@ -470,11 +542,7 @@ static bool initShaders(State* state, const char* fragShaderPath)
 	state->uniformLocColor4 = glGetUniformLocation(state->shaderProgram, UNIFORM_NAME_COLOR4);
 
 	// Uploading colors (as they are const)
-	glUniform3f(state->uniformLocColor1, state->colors[0][0], state->colors[0][1], state->colors[0][2]);
-	glUniform3f(state->uniformLocColor2, state->colors[1][0], state->colors[1][1], state->colors[1][2]);
-	glUniform3f(state->uniformLocColor3, state->colors[2][0], state->colors[2][1], state->colors[2][2]);
-	glUniform3f(state->uniformLocColor4, state->colors[3][0], state->colors[3][1], state->colors[3][2]);
-	
+	uploadColorsUniform(state);
 
 	// First time glViewport and Resolution uniform upload
 	glfwFramebufferSizeCallback(state->window, state->winWidth, state->winHeight);
@@ -572,6 +640,9 @@ static void loop(State* state)
 // Release all resources
 static void deinitApp(State* state)
 {
+	// Save fav colors
+	writeSavedColors(state);
+
 	// Killing playback thread
 	if (!state->testMode) {
 		atomic_store_explicit(&isExit, true, memory_order_relaxed);

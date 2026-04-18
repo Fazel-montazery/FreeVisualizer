@@ -1,5 +1,47 @@
 #include "fs.h"
 
+char* loadFileToStr(const char* path)
+{
+	if (!path) {
+		fprintf(stderr, "Path is NULL\n");
+		return NULL;
+	}
+
+	FILE *file = fopen(path, "r");
+	if (!file) {
+		fprintf(stderr, "Failed to open file: %s [%s]\n", path, strerror(errno));
+		return NULL;
+	}
+
+	fseek(file, 0, SEEK_END);
+	long length = ftell(file);
+	if (length < 0) {
+		fprintf(stderr, "Failed to determine the length of the file: %s [%s]\n", path, strerror(errno));
+		fclose(file);
+		return NULL;
+	}
+	rewind(file);
+
+	char* buffer = malloc(length + 1);
+	if (!buffer) {
+		fprintf(stderr, "Failed to allocate memory for ShaderSrc: %s [%s]\n", path, strerror(errno));
+		fclose(file);
+		return NULL;
+	}
+
+	size_t read_length = fread(buffer, 1, length, file);
+	if (read_length != length) {
+		fprintf(stderr, "Failed to read the entire file: %s [%s]\n", path, strerror(errno));
+		fclose(file);
+		free(buffer);
+		return NULL;
+	}
+
+	fclose(file);
+	buffer[length] = '\0';
+	return buffer;
+}
+
 const char* getHomeDir(const bool verbose)
 {
 	const char* home = getenv("HOME");

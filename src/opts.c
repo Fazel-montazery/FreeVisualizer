@@ -44,6 +44,17 @@ static int loading(void *arg)
 	return 0;
 }
 
+void copyDefaultColors(vec3 c[NUM_COLORS])
+{
+	int i = 0;
+	while (i < NUM_COLORS) {
+		c[i][0] = default_colors[i][0];
+		c[i][1] = default_colors[i][1];
+		c[i][2] = default_colors[i][2];
+		i++;
+	}
+}
+
 // Parse the colors in str and put them in c, else copy the default colors
 // Yeah it's ugly :)
 static void parseColors(const char* str, vec3 c[NUM_COLORS])
@@ -75,12 +86,7 @@ static void parseColors(const char* str, vec3 c[NUM_COLORS])
 	}
 
 final:
-	while (i < NUM_COLORS) {
-		c[i][0] = default_colors[i][0];
-		c[i][1] = default_colors[i][1];
-		c[i][2] = default_colors[i][2];
-		i++;
-	}
+	copyDefaultColors(c);
 
 	if (colors) free(colors);
 }
@@ -108,6 +114,9 @@ bool parseOpts( int argc, char *argv[], State* state)
 	const char* home = getHomeDir(true);
 	if (!home)
 		goto return_false;
+
+	// Constructing colors path
+	snprintf(state->savedColorsPath, PATH_SIZE, "%s/%s/%s", home, DATA_DIR, SAVED_COLORS_FILE_NAME);
 
 	char shaderDir[PATH_SIZE] = { 0 };
 	snprintf(shaderDir, PATH_SIZE, "%s/%s/%s", home, DATA_DIR, SHADER_DIR);

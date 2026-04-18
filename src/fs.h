@@ -14,6 +14,9 @@
 // Returns the home directory of the current user otherwise returns NULL
 const char* getHomeDir(const bool verbose);
 
+// Load the text content in a file to a string (you are the owner so free it up like a normal char*)
+char* loadFileToStr(const char* path);
+
 // Returns true if the directory at the path exist otherwise false
 bool dirExists(const char* path, const bool verbose);
 

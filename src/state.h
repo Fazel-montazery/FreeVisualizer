@@ -52,4 +52,6 @@ typedef struct
 	GLint		uniformLocColor3;
 	GLint		uniformLocColor4;
 	vec3		colors[NUM_COLORS];
+	char		savedColorsPath[PATH_SIZE];
+	vec3		savedColors[NUM_SAVED_COLORS][NUM_COLORS];
 } State;

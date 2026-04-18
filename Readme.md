@@ -47,6 +47,8 @@ fv [OPTIONS] <mp3 file>
 **]/[**                 (Change Amplitude scale stronger/weaker)
 **R**                   (Refresh random colors)
 **S**                   (Seek to start)
+**Shift+[0-9]**         (Save current color to slot [0-9])
+**[0-9]**               (Load color in slot [0-9])
 ```
 ### Options
 ```

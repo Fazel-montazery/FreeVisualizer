@@ -28,9 +28,11 @@ install: ${TARGET}
 	strip ${TARGET}
 	install -d ${BINDIR}
 	install -m 755 ${TARGET} ${BINDIR}/${TARGET}
+	rm -rf ${DATADIR}
+	install -d -m 777 ${DATADIR}
 	rm -rf ${SHADERDIR}
 	install -d ${SHADERDIR}
-	install -m 644  ${SHADERS} ${SHADERDIR}/
+	install -m 444  ${SHADERS} ${SHADERDIR}/
 
 uninstall:
 	rm -f ${BINDIR}/${TARGET}

@@ -8,6 +8,8 @@
 
 #include "../include/glad/glad.h"
 
+#include "fs.h"
+
 // Create a shader object from the file path provided. Returns true on success else false
 bool createShaderFromPath(const char* path, GLuint* shader_id, const GLenum shader_type);
 

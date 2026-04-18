@@ -17,6 +17,13 @@
 #define DATA_DIR ".FreeVisualizer"
 #define SHADER_DIR "shaders"
 #define SHADER_EXT ".glsl"
+#define SAVED_COLORS_FILE_NAME "colors.txt"
+#define NUM_SAVED_COLORS 10
+#define FVGLFW_NUMS_KEY_CONDITION(key) (key == GLFW_KEY_0 || key == GLFW_KEY_1 || key == GLFW_KEY_2 || \
+					key == GLFW_KEY_3 || key == GLFW_KEY_4 || key == GLFW_KEY_5 || \
+					key == GLFW_KEY_6 || key == GLFW_KEY_7 || key == GLFW_KEY_8 || \
+					key == GLFW_KEY_9)
+#define FVGLFW_NUMS_KEY_INT(key) (key - GLFW_KEY_0)
 
 #define DEFAULT_WIN_WIDTH (1000)
 #define DEFAULT_WIN_HEIGHT (1000)

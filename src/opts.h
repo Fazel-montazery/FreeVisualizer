@@ -18,6 +18,9 @@
 // Radomize colors
 void randColors(State* state);
 
+// Copy defaulr_colors[] to c[]
+void copyDefaultColors(vec3 c[NUM_COLORS]);
+
 // returns false if exit condition, else true
 // caller must allocate fragShaderPathBuf
 // bufferSiz is the size of fragShaderPathBuf
