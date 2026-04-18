@@ -30,6 +30,7 @@ install: ${TARGET}
 	install -m 755 ${TARGET} ${BINDIR}/${TARGET}
 	rm -rf ${DATADIR}
 	install -d -m 777 ${DATADIR}
+	install -m 666 colors.txt ${DATADIR}/
 	rm -rf ${SHADERDIR}
 	install -d ${SHADERDIR}
 	install -m 444  ${SHADERS} ${SHADERDIR}/
