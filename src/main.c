@@ -11,11 +11,12 @@
 #include "../include/glad/glad.h"
 #include <GLFW/glfw3.h>
 
+#include <sndfile.h>
+
 #include "defs.h"
 #include "opts.h"
 #include "fs.h"
 #include "shader.h"
-#include "sound.h"
 #include "state.h"
 
 // Blueprints
@@ -49,8 +50,9 @@ int main(int argc, char** argv)
 	atomic_store_explicit(&state.avgAmp, 0.0, memory_order_relaxed);
 	atomic_store_explicit(&state.ampScale, 10, memory_order_relaxed); // 10 * 0.1 = 1.0
 
-	// Setting up the Ctrl+C signal
+	// Setting up the Ctrl+C and kill signals
 	signal(SIGINT, catchCtrlC);
+	signal(SIGTERM, catchCtrlC);
 
 	if (!parseOpts(argc, argv, &state))
 		return 0;
@@ -118,156 +120,22 @@ static void writeSavedColors(State* state)
 	}
 }
 
-static int audio_playback_callback(void* arg)
+static void refillRingBuffer(void *userdata, uint64_t count)
 {
-	State* state = arg;
-
-	static float buffer [MUSIC_BUFFER_SIZE];
-
-	SF_INFO info = { 0 };
-	SNDFILE* sndFile = sf_open(state->musicPath, SFM_READ, &info);
-
-	if (!sndFile) {
-		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
-		atomic_store_explicit(&isExit, true, memory_order_relaxed);
-		return 0;
-	}
-
-	if (info.channels < 1 || info.channels > 2) {	
-		fprintf (stderr, "Error : channels = %d\n", info.channels);
-		atomic_store_explicit(&isExit, true, memory_order_relaxed);
-		return 0;
-	}
-
-	snd_pcm_t* pcmHandle = alsa_open(info.channels, (unsigned) info.samplerate, SF_TRUE);
-	if (!pcmHandle) {
-		atomic_store_explicit(&isExit, true, memory_order_relaxed);
-		return 0;
-	}
-	
-	int subformat = info.format & SF_FORMAT_SUBMASK;
-	int readcount = 0;
-
-	if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE) {
-		double	scale;
-
-		sf_command (sndFile, SFC_CALC_SIGNAL_MAX, &scale, sizeof (scale)) ;
-		if (scale > 1.0)
-			scale = 1.0 / scale;
-		else
-			scale = 1.0;
-
-		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && 
-				!atomic_load_explicit(&isExit, memory_order_relaxed)) {
-			float peak = 0;
-			float avg = 0;
-
-			for (int m = 0 ; m < readcount ; m++) {
-				buffer [m] *= scale ;
-				float s = fabs(buffer[m]);
-				if (s > peak) peak = s;
-				avg += s;
-			}
-			avg /= readcount;
-
-			// EMA smothing peak
-			float prePeak = atomic_load_explicit(&state->peakAmp, memory_order_relaxed);
-			if (peak > prePeak)
-				prePeak = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * prePeak;
-			else 
-				prePeak = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * prePeak;
-
-			// EMA smothing avg
-			float preAvg = atomic_load_explicit(&state->avgAmp, memory_order_relaxed);
-			preAvg = AVG_ALPHA * avg + (1 - AVG_ALPHA) * preAvg;
-
-			atomic_store_explicit(&state->peakAmp, prePeak, memory_order_relaxed);
-			atomic_store_explicit(&state->avgAmp,  preAvg,  memory_order_relaxed);
-
-			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE / info.channels, info.channels) ;
-
-			mtx_lock(&state->pauseMX);
-			while (state->isPaused) {
-				snd_pcm_pause(pcmHandle, 1);
-				cnd_wait(&state->pauseCV, &state->pauseMX);
-				if (atomic_load_explicit(&isExit, memory_order_relaxed)) break;
-				snd_pcm_pause(pcmHandle, 0);
-			}
-			mtx_unlock(&state->pauseMX);
-
-			int seek = atomic_load_explicit(&state->seekNow, memory_order_relaxed);
-			if (seek) {
-				if (seek == MUSIC_CONTROL_SEEK_START) {
-					sf_seek(sndFile, 0, SEEK_SET);
-				} else {
-					sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
-				}
-				atomic_store_explicit(&state->seekNow, 0, memory_order_relaxed);
-			}
-
-			atomic_store_explicit(&state->positionSec,
-					sf_seek(sndFile, 0, SEEK_CUR) / info.samplerate,
-					memory_order_relaxed);
-		}
-	} else {
-		while ((readcount = sf_read_float (sndFile, buffer, MUSIC_BUFFER_SIZE)) && 
-				!atomic_load_explicit(&isExit, memory_order_relaxed)) {
-			float peak = 0;
-			float avg = 0;
-
-			for (int m = 0 ; m < readcount ; m++) {
-				float s = fabs(buffer[m]);
-				if (s > peak) peak = s;
-				avg += s;
-			}
-			avg /= readcount;
-
-			// EMA smothing peak
-			float prePeak = atomic_load_explicit(&state->peakAmp, memory_order_relaxed);
-			if (peak > prePeak)
-				prePeak = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * prePeak;
-			else 
-				prePeak = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * prePeak;
-
-			// EMA smothing avg
-			float preAvg = atomic_load_explicit(&state->avgAmp, memory_order_relaxed);
-			preAvg = AVG_ALPHA * avg + (1 - AVG_ALPHA) * preAvg;
-
-			atomic_store_explicit(&state->peakAmp, prePeak, memory_order_relaxed);
-			atomic_store_explicit(&state->avgAmp,  preAvg,  memory_order_relaxed);
-
-			alsa_write_float (pcmHandle, buffer, MUSIC_BUFFER_SIZE/ info.channels, info.channels);
-
-			mtx_lock(&state->pauseMX);
-			while (state->isPaused) {
-				snd_pcm_pause(pcmHandle, 1);
-				cnd_wait(&state->pauseCV, &state->pauseMX);
-				if (atomic_load_explicit(&isExit, memory_order_relaxed)) break;
-				snd_pcm_pause(pcmHandle, 0);
-			}
-			mtx_unlock(&state->pauseMX);
-
-			int seek = atomic_load_explicit(&state->seekNow, memory_order_relaxed);
-			if (seek) {
-				if (seek == MUSIC_CONTROL_SEEK_START) {
-					sf_seek(sndFile, 0, SEEK_SET);
-				} else {
-					sf_seek(sndFile, seek * info.samplerate, SEEK_CUR);
-				}
-				atomic_store_explicit(&state->seekNow, 0, memory_order_relaxed);
-			}
-
-			atomic_store_explicit(&state->positionSec, 
-					sf_seek(sndFile, 0, SEEK_CUR) / info.samplerate, 
-					memory_order_relaxed);
-		}
-	}
-
-	sf_close(sndFile);
-	snd_pcm_drain(pcmHandle);
-	snd_pcm_close(pcmHandle);
-	atomic_store_explicit(&isExit, true, memory_order_relaxed);
-	return 0;
+        State* state = userdata;
+        int32_t filled;
+        uint32_t index, avail;
+ 
+        filled = spa_ringbuffer_get_write_index(&state->spaRing, &index);
+ 
+        /* this is how much samples we can write */
+        avail = RING_BUFFER_SIZE - filled;
+ 
+        /* write new samples to the ringbuffer from the given index */
+	uint32_t readCount = sf_readf_float(state->sndfile, &state->ringBuffer[index], avail);
+ 
+        /* and advance the ringbuffer */
+        spa_ringbuffer_write_update(&state->spaRing, index + readCount);
 }
 
 static void pauseAudio(State* state)
@@ -550,32 +418,59 @@ static bool initShaders(State* state, const char* fragShaderPath)
 	return true;
 }
 
-// Loading the music and init audio system (alsa)
+// Loading the music and init audio system
 static bool initAudio(State* state)
 {
-	SF_INFO info = { 0 };
-	SNDFILE* sndFile = sf_open(state->musicPath, SFM_READ, &info);
+	state->sndfile = sf_open(state->musicPath, SFM_READ, &state->sndinfo);
 
-	if (!sndFile) {
+	if (!state->sndfile) {
 		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
 		return false;
 	}
 
-	state->duration = info.frames / info.samplerate;
-	sf_close(sndFile);
+	state->ringBuffer = malloc(RING_BUFFER_SIZE * state->sndinfo.channels);
+	if (!state->ringBuffer) {
+		fprintf(stderr, "Couldn't allocate the RingBuffer: %s\n", strerror(errno));
+		sf_close(state->sndfile);
+		return false;
+	}
+
+	state->duration = state->sndinfo.frames / state->sndinfo.samplerate;
+
+	// Pipewire
+	pw_init(NULL, NULL);
+
+	state->pwMainLoop = pw_main_loop_new(NULL);
+	if (!state->pwMainLoop) {
+		fprintf(stderr, "Couldn't create the pipewire mainloop: %s\n", strerror(errno));
+		sf_close(state->sndfile);
+		pw_deinit();
+		free(state->ringBuffer);
+		return false;
+	}
+	state->pwLoop = pw_main_loop_get_loop(state->pwMainLoop);
+
+	spa_ringbuffer_init(&state->spaRing);
+	state->spaRefillEvent = pw_loop_add_event(state->pwLoop, refillRingBuffer, state);
+	if (!state->spaRefillEvent) {
+		fprintf(stderr, "Couldn't register refill_event to pipewire mainloop: %s\n", strerror(errno));
+		sf_close(state->sndfile);
+		pw_main_loop_destroy(state->pwMainLoop);
+		pw_deinit();
+		free(state->ringBuffer);
+		return false;
+	}
+	refillRingBuffer(state, 0);
 
 	if (mtx_init(&state->pauseMX, mtx_plain) != thrd_success) {
 		fprintf(stderr, "Error creating mutex for music thread.\n");
+		free(state->ringBuffer);
 		return false;
 	}
 
 	if (cnd_init(&state->pauseCV) != thrd_success) {
 		fprintf(stderr, "Error creating conditional variable for music thread.\n");
-		return false;
-	}
-
-	if (thrd_create(&state->musicThread, audio_playback_callback, state) != thrd_success) {
-		fprintf(stderr, "Error creating music thread.\n");
+		free(state->ringBuffer);
 		return false;
 	}
 
@@ -649,7 +544,6 @@ static void deinitApp(State* state)
 		mtx_lock(&state->pauseMX);
 		cnd_broadcast(&state->pauseCV);
 		mtx_unlock(&state->pauseMX);
-		thrd_join(state->musicThread, NULL);
 	}
 
 	free_srt(state->srtHandle);

@@ -7,7 +7,7 @@ DATADIR ?= ${USR_HOME}/.FreeVisualizer
 SHADERDIR := ${DATADIR}/shaders
 SHADERS := shaders/*
 
-SRC := src/main.c src/opts.c src/fs.c src/glad.c src/shader.c src/srt_parse.c
+SRC := src/main.c src/opts.c src/fs.c include/glad/glad.c src/shader.c src/srt_parse.c
 LIBS := -lglfw -lpthread -lasound -lsndfile rust/srt_parse/target/release/libsrt_parse.a $(shell pkg-config --cflags --libs libpipewire-0.3)
 CC := gcc
 TARGET := fv
