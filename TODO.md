@@ -1,3 +1,5 @@
+port to pipewire!
+wtf is that <unknown module> in Asan reports?
 Check Makefile install permissions!
 Create a man page for fv.
 Saving colors as fav and loading later.
