@@ -1,3 +1,5 @@
+Somehow get rid of fonconfig leaks!
+Clean initAudio() and use watemark system for ringbuffer refill.
 port to pipewire!
 wtf is that <unknown module> in Asan reports?
 Check Makefile install permissions!

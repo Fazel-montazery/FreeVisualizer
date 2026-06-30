@@ -11,6 +11,8 @@
 #include "../include/glad/glad.h"
 #include <GLFW/glfw3.h>
 
+#include <pipewire/pipewire.h>
+
 #include <sndfile.h>
 
 #include "defs.h"
@@ -120,22 +122,109 @@ static void writeSavedColors(State* state)
 	}
 }
 
-static void refillRingBuffer(void *userdata, uint64_t count)
+static void refillRingBuffer(State* state)
 {
-        State* state = userdata;
         int32_t filled;
         uint32_t index, avail;
+        uint64_t count;
+	uint32_t n_frames = RING_BUFFER_SIZE;
+
+	while (n_frames > 0) {
+		bool flag = true;
+                while (flag) {
+                        filled = spa_ringbuffer_get_write_index(&state->spaRing, &index);
  
-        filled = spa_ringbuffer_get_write_index(&state->spaRing, &index);
+                        /* this is how much samples we can write */
+                        avail = RING_BUFFER_SIZE - filled;
+                        if (avail > 0)
+                                break;
  
-        /* this is how much samples we can write */
-        avail = RING_BUFFER_SIZE - filled;
+                        /* no space.. block and wait for free space */
+                        spa_system_eventfd_read(state->pwLoop->system, state->spaEventFd, &count);
+			if (atomic_load_explicit(&isExit, memory_order_relaxed))
+				flag = false;
+                }
+		if (!flag) break;
+
+                if (avail > n_frames)
+                        avail = n_frames;
  
-        /* write new samples to the ringbuffer from the given index */
-	uint32_t readCount = sf_readf_float(state->sndfile, &state->ringBuffer[index], avail);
+		/* write new samples to the ringbuffer from the given index */
+		uint32_t offset = index % RING_BUFFER_SIZE;
+		uint32_t space_to_end = RING_BUFFER_SIZE - offset;
+		uint32_t readCount1 = sf_readf_float(state->sndfile, &state->ringBuffer[offset * state->sndinfo.channels], SPA_MIN(avail, space_to_end));
+		uint32_t readCount2 = 0;
+		if (readCount1 < avail) {
+			readCount2 = sf_readf_float(state->sndfile, &state->ringBuffer[0], avail - readCount1);
+		}
+
+                n_frames -= readCount1 + readCount2;
  
-        /* and advance the ringbuffer */
-        spa_ringbuffer_write_update(&state->spaRing, index + readCount);
+                /* and advance the ringbuffer */
+                spa_ringbuffer_write_update(&state->spaRing, index + readCount1 + readCount2);
+        }
+}
+
+static int audioProducerCallback(void* userdata)
+{
+	while (!atomic_load_explicit(&isExit, memory_order_relaxed)) {
+		refillRingBuffer((State*)userdata);
+	}
+	return 0;
+}
+
+static void pwOnProcess(void *userdata)
+{
+	State* state = userdata;
+        struct pw_buffer *b;
+        struct spa_buffer *buf;
+        uint8_t *p;
+        uint32_t index, to_read, to_silence;
+        int32_t avail, n_frames, stride;
+
+        if ((b = pw_stream_dequeue_buffer(state->pwStream)) == NULL) {
+                pw_log_warn("out of buffers: %m");
+                return;
+        }
+
+        buf = b->buffer;
+        if ((p = buf->datas[0].data) == NULL)
+                return;
+
+        /* the amount of space in the ringbuffer and the read index */
+        avail = spa_ringbuffer_get_read_index(&state->spaRing, &index);
+
+        stride = sizeof(float) * state->sndinfo.channels;
+        n_frames = buf->datas[0].maxsize / stride;
+        if (b->requested)
+                n_frames = SPA_MIN((int32_t)b->requested, n_frames);
+
+        /* we can read if there is something available */
+        to_read = avail > 0 ? SPA_MIN(avail, n_frames) : 0;
+        /* and fill the remainder with silence */
+        to_silence = n_frames - to_read;
+
+        if (to_read > 0) {
+                /* read data into the buffer */
+                spa_ringbuffer_read_data(&state->spaRing,
+                                state->ringBuffer, RING_BUFFER_SIZE * stride,
+                                (index % RING_BUFFER_SIZE) * stride,
+                                p, to_read * stride);
+                /* update the read pointer */
+                spa_ringbuffer_read_update(&state->spaRing, index + to_read);
+        }
+        if (to_silence > 0)
+                /* set the rest of the buffer to silence */
+                memset(SPA_PTROFF(p, to_read * stride, void), 0, to_silence * stride);
+
+        buf->datas[0].chunk->offset = 0;
+        buf->datas[0].chunk->stride = stride;
+        buf->datas[0].chunk->size = n_frames * stride;
+
+        pw_stream_queue_buffer(state->pwStream, b);
+
+        /* signal the main thread to fill the ringbuffer */
+        spa_system_eventfd_write(state->pwLoop->system, state->spaEventFd, 1);
 }
 
 static void pauseAudio(State* state)
@@ -428,7 +517,7 @@ static bool initAudio(State* state)
 		return false;
 	}
 
-	state->ringBuffer = malloc(RING_BUFFER_SIZE * state->sndinfo.channels);
+	state->ringBuffer = malloc(RING_BUFFER_SIZE * state->sndinfo.channels * sizeof(float));
 	if (!state->ringBuffer) {
 		fprintf(stderr, "Couldn't allocate the RingBuffer: %s\n", strerror(errno));
 		sf_close(state->sndfile);
@@ -438,29 +527,138 @@ static bool initAudio(State* state)
 	state->duration = state->sndinfo.frames / state->sndinfo.samplerate;
 
 	// Pipewire
+	state->spaPodBuilder = SPA_POD_BUILDER_INIT(state->spaPodbuffer, 1024);
 	pw_init(NULL, NULL);
 
-	state->pwMainLoop = pw_main_loop_new(NULL);
-	if (!state->pwMainLoop) {
-		fprintf(stderr, "Couldn't create the pipewire mainloop: %s\n", strerror(errno));
+	state->pwThreadLoop = pw_thread_loop_new("FreeVisualizerAudio", NULL);
+	if (!state->pwThreadLoop) {
+		fprintf(stderr, "Couldn't create pipewire's ThreadLoop: %s\n", strerror(errno));
 		sf_close(state->sndfile);
 		pw_deinit();
 		free(state->ringBuffer);
 		return false;
 	}
-	state->pwLoop = pw_main_loop_get_loop(state->pwMainLoop);
+	state->pwLoop = pw_thread_loop_get_loop(state->pwThreadLoop);
+
+	pw_thread_loop_lock(state->pwThreadLoop);
+
+	if ((state->spaEventFd = spa_system_eventfd_create(state->pwLoop->system, SPA_FD_CLOEXEC)) < 0) {
+		fprintf(stderr, "Couldn't create spa eventfd: %s\n", strerror(errno));
+		sf_close(state->sndfile);
+		pw_thread_loop_unlock(state->pwThreadLoop);
+		pw_thread_loop_destroy(state->pwThreadLoop);
+		pw_deinit();
+		free(state->ringBuffer);
+                return false;
+	}
+
+	if(pw_thread_loop_start(state->pwThreadLoop) != 0) {
+		fprintf(stderr, "Couldn't start pipewire ThreadLoop: %s\n", strerror(errno));
+		sf_close(state->sndfile);
+		pw_thread_loop_unlock(state->pwThreadLoop);
+		pw_thread_loop_destroy(state->pwThreadLoop);
+		close(state->spaEventFd);
+		pw_deinit();
+		free(state->ringBuffer);
+                return false;
+	}
 
 	spa_ringbuffer_init(&state->spaRing);
-	state->spaRefillEvent = pw_loop_add_event(state->pwLoop, refillRingBuffer, state);
-	if (!state->spaRefillEvent) {
-		fprintf(stderr, "Couldn't register refill_event to pipewire mainloop: %s\n", strerror(errno));
+
+	// Setup Stream
+	state->pwProps = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio",
+			 PW_KEY_MEDIA_CATEGORY, "Playback",
+			 PW_KEY_MEDIA_ROLE, "Music",
+			 NULL);
+
+	if (!state->pwProps) {
+		fprintf(stderr, "Couldn't create pipewire's stream properties: %s\n", strerror(errno));
 		sf_close(state->sndfile);
-		pw_main_loop_destroy(state->pwMainLoop);
+		pw_thread_loop_unlock(state->pwThreadLoop);
+		pw_thread_loop_destroy(state->pwThreadLoop);
+		close(state->spaEventFd);
 		pw_deinit();
 		free(state->ringBuffer);
 		return false;
 	}
-	refillRingBuffer(state, 0);
+
+	static const struct pw_stream_events streamEvents = {
+		PW_VERSION_STREAM_EVENTS,
+		.process = pwOnProcess,
+	};
+
+	state->pwStream = pw_stream_new_simple(state->pwLoop,
+					       "FreeVisualizer",
+					       state->pwProps,
+					       &streamEvents,
+					       state);
+
+	if (!state->pwStream) {
+		fprintf(stderr, "Couldn't create pipewire's stream object: %s\n", strerror(errno));
+		sf_close(state->sndfile);
+		pw_thread_loop_unlock(state->pwThreadLoop);
+		pw_thread_loop_destroy(state->pwThreadLoop);
+		close(state->spaEventFd);
+		pw_deinit();
+		free(state->ringBuffer);
+		return false;
+	}
+
+	state->spaParams[0] = spa_format_audio_raw_build(&state->spaPodBuilder, SPA_PARAM_EnumFormat,
+							 &SPA_AUDIO_INFO_RAW_INIT(
+								 .format = SPA_AUDIO_FORMAT_F32,
+								 .channels = state->sndinfo.channels,
+								 .rate = state->sndinfo.samplerate));
+
+	if (!state->spaParams[0]) {
+		fprintf(stderr, "Couldn't create spa pod: %s\n", strerror(errno));
+		sf_close(state->sndfile);
+		pw_stream_destroy(state->pwStream);
+		pw_thread_loop_unlock(state->pwThreadLoop);
+		pw_thread_loop_destroy(state->pwThreadLoop);
+		close(state->spaEventFd);
+		pw_deinit();
+		free(state->ringBuffer);
+		return false;
+	}
+
+	int res = pw_stream_connect(state->pwStream,
+		  PW_DIRECTION_OUTPUT,
+		  PW_ID_ANY,
+		  PW_STREAM_FLAG_AUTOCONNECT |
+		  PW_STREAM_FLAG_MAP_BUFFERS |
+		  PW_STREAM_FLAG_RT_PROCESS,
+		  state->spaParams, 1);
+
+	if (res < 0) {
+		fprintf(stderr, "Couldn't connect to pipewire stream: %s\n", strerror(errno));
+		sf_close(state->sndfile);
+		pw_stream_destroy(state->pwStream);
+		pw_thread_loop_unlock(state->pwThreadLoop);
+		pw_thread_loop_destroy(state->pwThreadLoop);
+		close(state->spaEventFd);
+		pw_deinit();
+		free(state->ringBuffer);
+		return false;
+	}
+
+	// Prefill the ringbuffer
+	refillRingBuffer(state);
+
+	// Start Audio Producer
+	if (thrd_create(&state->audioProducerThread, audioProducerCallback, state) != thrd_success) {
+		fprintf(stderr, "Couldn't create AudioProducer thread: %s\n", strerror(errno));
+		sf_close(state->sndfile);
+		pw_stream_destroy(state->pwStream);
+		pw_thread_loop_unlock(state->pwThreadLoop);
+		pw_thread_loop_destroy(state->pwThreadLoop);
+		close(state->spaEventFd);
+		pw_deinit();
+		free(state->ringBuffer);
+		return false;
+	}
+
+        pw_thread_loop_unlock(state->pwThreadLoop);
 
 	if (mtx_init(&state->pauseMX, mtx_plain) != thrd_success) {
 		fprintf(stderr, "Error creating mutex for music thread.\n");
@@ -535,8 +733,28 @@ static void loop(State* state)
 // Release all resources
 static void deinitApp(State* state)
 {
+	atomic_store_explicit(&isExit, true, memory_order_relaxed);
+
 	// Save fav colors
 	writeSavedColors(state);
+
+	// Join producer thread
+	spa_system_eventfd_write(state->pwLoop->system, state->spaEventFd, 1);
+	thrd_join(state->audioProducerThread, NULL);
+
+	// Deinit pipwire
+	pw_thread_loop_lock(state->pwThreadLoop);
+        pw_stream_destroy(state->pwStream);
+	pw_thread_loop_unlock(state->pwThreadLoop);
+	pw_thread_loop_destroy(state->pwThreadLoop);
+	close(state->spaEventFd);
+	pw_deinit();
+
+	// Free RingBuffer
+	free(state->ringBuffer);
+
+	// sndfile
+	sf_close(state->sndfile);
 
 	// Killing playback thread
 	if (!state->testMode) {
@@ -551,6 +769,7 @@ static void deinitApp(State* state)
 	glDeleteProgram(state->shaderProgram);
 	glfwDestroyWindow(state->window);
 	glfwTerminate();
+
 	// Show terminal cursor (if hidden)
 	printf("\033[?25h");
 	fflush(stdout);

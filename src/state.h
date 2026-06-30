@@ -32,10 +32,16 @@ typedef struct
 	char*			musicPath;
 	SNDFILE*		sndfile;
 	SF_INFO			sndinfo;
-	struct pw_main_loop*	pwMainLoop;
+	thrd_t			audioProducerThread;
+	struct pw_thread_loop*	pwThreadLoop;
 	struct pw_loop*		pwLoop;
+	struct pw_stream*	pwStream;
+	struct pw_properties*	pwProps;
+	uint8_t			spaPodbuffer[1024];
+	struct spa_pod_builder	spaPodBuilder;
+	const struct spa_pod*	spaParams[1];
+	int			spaEventFd;
 	struct spa_ringbuffer	spaRing;
-	struct spa_source*	spaRefillEvent;
 	float*			ringBuffer;
 	mtx_t			pauseMX;
 	cnd_t			pauseCV;
