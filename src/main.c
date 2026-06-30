@@ -514,14 +514,13 @@ static bool initAudio(State* state)
 
 	if (!state->sndfile) {
 		fprintf(stderr, "Error opening file: %s\n", sf_strerror(NULL));
-		return false;
+		goto audio_deinit;
 	}
 
 	state->ringBuffer = malloc(RING_BUFFER_SIZE * state->sndinfo.channels * sizeof(float));
 	if (!state->ringBuffer) {
 		fprintf(stderr, "Couldn't allocate the RingBuffer: %s\n", strerror(errno));
-		sf_close(state->sndfile);
-		return false;
+		goto audio_deinit_0;
 	}
 
 	state->duration = state->sndinfo.frames / state->sndinfo.samplerate;
@@ -533,10 +532,7 @@ static bool initAudio(State* state)
 	state->pwThreadLoop = pw_thread_loop_new("FreeVisualizerAudio", NULL);
 	if (!state->pwThreadLoop) {
 		fprintf(stderr, "Couldn't create pipewire's ThreadLoop: %s\n", strerror(errno));
-		sf_close(state->sndfile);
-		pw_deinit();
-		free(state->ringBuffer);
-		return false;
+		goto audio_deinit_1;
 	}
 	state->pwLoop = pw_thread_loop_get_loop(state->pwThreadLoop);
 
@@ -544,23 +540,12 @@ static bool initAudio(State* state)
 
 	if ((state->spaEventFd = spa_system_eventfd_create(state->pwLoop->system, SPA_FD_CLOEXEC)) < 0) {
 		fprintf(stderr, "Couldn't create spa eventfd: %s\n", strerror(errno));
-		sf_close(state->sndfile);
-		pw_thread_loop_unlock(state->pwThreadLoop);
-		pw_thread_loop_destroy(state->pwThreadLoop);
-		pw_deinit();
-		free(state->ringBuffer);
-                return false;
+		goto audio_deinit_2;
 	}
 
 	if(pw_thread_loop_start(state->pwThreadLoop) != 0) {
 		fprintf(stderr, "Couldn't start pipewire ThreadLoop: %s\n", strerror(errno));
-		sf_close(state->sndfile);
-		pw_thread_loop_unlock(state->pwThreadLoop);
-		pw_thread_loop_destroy(state->pwThreadLoop);
-		close(state->spaEventFd);
-		pw_deinit();
-		free(state->ringBuffer);
-                return false;
+		goto audio_deinit_3;
 	}
 
 	spa_ringbuffer_init(&state->spaRing);
@@ -573,13 +558,7 @@ static bool initAudio(State* state)
 
 	if (!state->pwProps) {
 		fprintf(stderr, "Couldn't create pipewire's stream properties: %s\n", strerror(errno));
-		sf_close(state->sndfile);
-		pw_thread_loop_unlock(state->pwThreadLoop);
-		pw_thread_loop_destroy(state->pwThreadLoop);
-		close(state->spaEventFd);
-		pw_deinit();
-		free(state->ringBuffer);
-		return false;
+		goto audio_deinit_3;
 	}
 
 	static const struct pw_stream_events streamEvents = {
@@ -595,13 +574,7 @@ static bool initAudio(State* state)
 
 	if (!state->pwStream) {
 		fprintf(stderr, "Couldn't create pipewire's stream object: %s\n", strerror(errno));
-		sf_close(state->sndfile);
-		pw_thread_loop_unlock(state->pwThreadLoop);
-		pw_thread_loop_destroy(state->pwThreadLoop);
-		close(state->spaEventFd);
-		pw_deinit();
-		free(state->ringBuffer);
-		return false;
+		goto audio_deinit_3;
 	}
 
 	state->spaParams[0] = spa_format_audio_raw_build(&state->spaPodBuilder, SPA_PARAM_EnumFormat,
@@ -612,14 +585,7 @@ static bool initAudio(State* state)
 
 	if (!state->spaParams[0]) {
 		fprintf(stderr, "Couldn't create spa pod: %s\n", strerror(errno));
-		sf_close(state->sndfile);
-		pw_stream_destroy(state->pwStream);
-		pw_thread_loop_unlock(state->pwThreadLoop);
-		pw_thread_loop_destroy(state->pwThreadLoop);
-		close(state->spaEventFd);
-		pw_deinit();
-		free(state->ringBuffer);
-		return false;
+		goto audio_deinit_4;
 	}
 
 	int res = pw_stream_connect(state->pwStream,
@@ -632,14 +598,7 @@ static bool initAudio(State* state)
 
 	if (res < 0) {
 		fprintf(stderr, "Couldn't connect to pipewire stream: %s\n", strerror(errno));
-		sf_close(state->sndfile);
-		pw_stream_destroy(state->pwStream);
-		pw_thread_loop_unlock(state->pwThreadLoop);
-		pw_thread_loop_destroy(state->pwThreadLoop);
-		close(state->spaEventFd);
-		pw_deinit();
-		free(state->ringBuffer);
-		return false;
+		goto audio_deinit_4;
 	}
 
 	// Prefill the ringbuffer
@@ -648,14 +607,7 @@ static bool initAudio(State* state)
 	// Start Audio Producer
 	if (thrd_create(&state->audioProducerThread, audioProducerCallback, state) != thrd_success) {
 		fprintf(stderr, "Couldn't create AudioProducer thread: %s\n", strerror(errno));
-		sf_close(state->sndfile);
-		pw_stream_destroy(state->pwStream);
-		pw_thread_loop_unlock(state->pwThreadLoop);
-		pw_thread_loop_destroy(state->pwThreadLoop);
-		close(state->spaEventFd);
-		pw_deinit();
-		free(state->ringBuffer);
-		return false;
+		goto audio_deinit_4;
 	}
 
         pw_thread_loop_unlock(state->pwThreadLoop);
@@ -673,6 +625,21 @@ static bool initAudio(State* state)
 	}
 
 	return true;
+
+audio_deinit_4:
+	pw_stream_destroy(state->pwStream);
+audio_deinit_3:
+	close(state->spaEventFd);
+audio_deinit_2:
+	pw_thread_loop_unlock(state->pwThreadLoop);
+	pw_thread_loop_destroy(state->pwThreadLoop);
+audio_deinit_1:
+	pw_deinit();
+	free(state->ringBuffer);
+audio_deinit_0:
+	sf_close(state->sndfile);
+audio_deinit:
+	return false;
 }
 
 // Main drawing loop
