@@ -7,15 +7,15 @@
 On all distros, you need a GPU driver that supports at least OpenGL 3.3
 debian-based distros:
 ```bash
-sudo apt install libsndfile1-dev libasound2-dev libglfw3-dev
+sudo apt install libsndfile1-dev libpipewire-0.3-dev libglfw3-dev
 ```
 fedora:
 ```bash
-sudo dnf install libsndfile-devel alsa-lib-devel glfw-devel
+sudo dnf install libsndfile-devel pipewire-devel glfw-devel
 ```
 arch:
 ```bash
-sudo pacman -S libsndfile alsa-lib glfw
+sudo pacman -S libsndfile libpipewire glfw
 ```
 ## Build
 for building from source:
