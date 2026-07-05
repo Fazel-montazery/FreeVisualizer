@@ -127,7 +127,7 @@ static void refillRingBuffer(State* state)
         int32_t filled;
         uint32_t index, avail;
         uint64_t count;
-	uint32_t n_frames = RING_BUFFER_SIZE;
+	uint32_t n_frames = RING_BUFFER_WATERMARK_HIGH;
 
 	while (n_frames > 0) {
 		bool flag = true;
@@ -224,7 +224,18 @@ static void pwOnProcess(void *userdata)
         pw_stream_queue_buffer(state->pwStream, b);
 
         /* signal the main thread to fill the ringbuffer */
-        spa_system_eventfd_write(state->pwLoop->system, state->spaEventFd, 1);
+	int32_t remaining = avail - (int32_t)to_read;
+
+	if (remaining < RING_BUFFER_WATERMARK_LOW)
+		spa_system_eventfd_write(state->pwLoop->system, state->spaEventFd, 1);
+
+#ifndef NDEBUG
+	if (to_silence > 0) {
+		fprintf(stderr, "We have underrun!!\n");
+		fprintf(stderr, "requested: %ld\n", b->requested);
+		fprintf(stderr, "remaning: %d\n", remaining);
+	}
+#endif
 }
 
 static void pauseAudio(State* state)
