@@ -32,6 +32,7 @@ typedef struct
 	char*			musicPath;
 	SNDFILE*		sndfile;
 	SF_INFO			sndinfo;
+	double			sndscale; // to normalize for the subformat
 	thrd_t			audioProducerThread;
 	struct pw_thread_loop*	pwThreadLoop;
 	struct pw_loop*		pwLoop;

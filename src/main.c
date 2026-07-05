@@ -221,6 +221,33 @@ static void pwOnProcess(void *userdata)
         buf->datas[0].chunk->stride = stride;
         buf->datas[0].chunk->size = n_frames * stride;
 
+	// Proccessing
+	float* samples = (float*)p;
+	float peak = 0;
+	float avg = 0;
+	for (uint32_t i = 0; i < to_read; i++) {
+		samples[i] *= state->sndscale;
+		float s = fabs(samples[i]);
+		if (s > peak) peak = s;
+		avg += s;
+	}
+	avg /= to_read;
+	
+	// EMA smoothing peak
+	float prePeak = atomic_load_explicit(&state->peakAmp, memory_order_relaxed);
+	if (peak > prePeak)
+		prePeak = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * prePeak;
+	else
+		prePeak = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * prePeak;
+
+	// EMA smoothing avg
+	float preAvg = atomic_load_explicit(&state->avgAmp, memory_order_relaxed);
+	preAvg = AVG_ALPHA * avg + (1 - AVG_ALPHA) * preAvg;
+
+	atomic_store_explicit(&state->peakAmp, prePeak, memory_order_relaxed);
+	atomic_store_explicit(&state->avgAmp,  preAvg,  memory_order_relaxed);
+
+	// Feed to Speakers
         pw_stream_queue_buffer(state->pwStream, b);
 
         /* signal the main thread to fill the ringbuffer */
@@ -528,6 +555,16 @@ static bool initAudio(State* state)
 		goto audio_deinit;
 	}
 
+	// Audio scaling for normalization
+	state->sndscale = 1.0;
+	int subformat = state->sndinfo.format & SF_FORMAT_SUBMASK;
+	if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE) {
+		sf_command (state->sndfile, SFC_CALC_SIGNAL_MAX, &state->sndscale, sizeof (state->sndscale));
+		if (state->sndscale > 1.0)
+			state->sndscale = 1.0 / state->sndscale;
+	}
+
+	// RingBuffer
 	state->ringBuffer = malloc(RING_BUFFER_SIZE * state->sndinfo.channels * sizeof(float));
 	if (!state->ringBuffer) {
 		fprintf(stderr, "Couldn't allocate the RingBuffer: %s\n", strerror(errno));
