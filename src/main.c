@@ -267,17 +267,18 @@ static void pwOnProcess(void *userdata)
 
 static void pauseAudio(State* state)
 {
-	mtx_lock(&state->pauseMX);
+	pw_thread_loop_lock(state->pwThreadLoop);
+	pw_stream_set_active(state->pwStream, false);
+	pw_thread_loop_unlock(state->pwThreadLoop);
 	state->isPaused = true;
-	mtx_unlock(&state->pauseMX);
 }
 
 static void resumeAudio(State* state) 
 {
-	mtx_lock(&state->pauseMX);
+	pw_thread_loop_lock(state->pwThreadLoop);
+	pw_stream_set_active(state->pwStream, true);
+	pw_thread_loop_unlock(state->pwThreadLoop);
 	state->isPaused = false;
-	cnd_signal(&state->pauseCV);
-	mtx_unlock(&state->pauseMX);
 }
 
 #ifndef NDEBUG
@@ -660,18 +661,6 @@ static bool initAudio(State* state)
 
         pw_thread_loop_unlock(state->pwThreadLoop);
 
-	if (mtx_init(&state->pauseMX, mtx_plain) != thrd_success) {
-		fprintf(stderr, "Error creating mutex for music thread.\n");
-		free(state->ringBuffer);
-		return false;
-	}
-
-	if (cnd_init(&state->pauseCV) != thrd_success) {
-		fprintf(stderr, "Error creating conditional variable for music thread.\n");
-		free(state->ringBuffer);
-		return false;
-	}
-
 	return true;
 
 audio_deinit_4:
@@ -753,30 +742,25 @@ static void deinitApp(State* state)
 	// Save fav colors
 	writeSavedColors(state);
 
-	// Join producer thread
-	spa_system_eventfd_write(state->pwLoop->system, state->spaEventFd, 1);
-	thrd_join(state->audioProducerThread, NULL);
-
-	// Deinit pipwire
-	pw_thread_loop_lock(state->pwThreadLoop);
-        pw_stream_destroy(state->pwStream);
-	pw_thread_loop_unlock(state->pwThreadLoop);
-	pw_thread_loop_destroy(state->pwThreadLoop);
-	close(state->spaEventFd);
-	pw_deinit();
-
-	// Free RingBuffer
-	free(state->ringBuffer);
-
-	// sndfile
-	sf_close(state->sndfile);
-
-	// Killing playback thread
+	// Deinit Audio
 	if (!state->testMode) {
-		atomic_store_explicit(&isExit, true, memory_order_relaxed);
-		mtx_lock(&state->pauseMX);
-		cnd_broadcast(&state->pauseCV);
-		mtx_unlock(&state->pauseMX);
+		// Join producer thread
+		spa_system_eventfd_write(state->pwLoop->system, state->spaEventFd, 1);
+		thrd_join(state->audioProducerThread, NULL);
+
+		// Deinit pipwire
+		pw_thread_loop_lock(state->pwThreadLoop);
+		pw_stream_destroy(state->pwStream);
+		pw_thread_loop_unlock(state->pwThreadLoop);
+		pw_thread_loop_destroy(state->pwThreadLoop);
+		close(state->spaEventFd);
+		pw_deinit();
+
+		// Free RingBuffer
+		free(state->ringBuffer);
+
+		// sndfile
+		sf_close(state->sndfile);
 	}
 
 	free_srt(state->srtHandle);

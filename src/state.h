@@ -44,8 +44,6 @@ typedef struct
 	int			spaEventFd;
 	struct spa_ringbuffer	spaRing;
 	float*			ringBuffer;
-	mtx_t			pauseMX;
-	cnd_t			pauseCV;
 	bool			isPaused;
 	int			duration;
 	_Atomic int		positionSec;
