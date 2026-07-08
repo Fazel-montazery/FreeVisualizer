@@ -48,6 +48,7 @@ int main(int argc, char** argv)
 	atomic_store_explicit(&isExit, false, memory_order_relaxed);
 	atomic_store_explicit(&state.positionSec, 0, memory_order_relaxed);
 	atomic_store_explicit(&state.seekNow, 0, memory_order_relaxed);
+	atomic_store_explicit(&state.seekPending, 0, memory_order_relaxed);
 	atomic_store_explicit(&state.peakAmp, 0.0, memory_order_relaxed);
 	atomic_store_explicit(&state.avgAmp, 0.0, memory_order_relaxed);
 	atomic_store_explicit(&state.ampScale, 10, memory_order_relaxed); // 10 * 0.1 = 1.0
@@ -122,18 +123,19 @@ static void writeSavedColors(State* state)
 	}
 }
 
-static void refillRingBuffer(State* state)
+static void refillRingBuffer(State* state, uint32_t n_frames)
 {
         int32_t filled;
         uint32_t index, avail;
         uint64_t count;
-	uint32_t n_frames = RING_BUFFER_WATERMARK_HIGH;
 
 	while (n_frames > 0) {
-		bool flag = true;
-                while (flag) {
-                        filled = spa_ringbuffer_get_write_index(&state->spaRing, &index);
+                while (true) {
+			atomic_store_explicit(&state->positionSec, 
+					       sf_seek(state->sndfile, 0, SEEK_CUR) / state->sndinfo.samplerate, 
+					       memory_order_relaxed);
  
+                        filled = spa_ringbuffer_get_write_index(&state->spaRing, &index);
                         /* this is how much samples we can write */
                         avail = RING_BUFFER_SIZE - filled;
                         if (avail > 0)
@@ -141,10 +143,9 @@ static void refillRingBuffer(State* state)
  
                         /* no space.. block and wait for free space */
                         spa_system_eventfd_read(state->pwLoop->system, state->spaEventFd, &count);
-			if (atomic_load_explicit(&isExit, memory_order_relaxed))
-				flag = false;
+			if (atomic_load_explicit(&isExit, memory_order_relaxed) || atomic_load_explicit(&state->seekPending, memory_order_relaxed))
+				return;
                 }
-		if (!flag) break;
 
                 if (avail > n_frames)
                         avail = n_frames;
@@ -167,8 +168,27 @@ static void refillRingBuffer(State* state)
 
 static int audioProducerCallback(void* userdata)
 {
+	State* state = userdata;
 	while (!atomic_load_explicit(&isExit, memory_order_relaxed)) {
-		refillRingBuffer((State*)userdata);
+		int seek = atomic_load_explicit(&state->seekPending, memory_order_relaxed);
+		if (seek) {
+			pw_thread_loop_lock(state->pwThreadLoop);
+
+			spa_ringbuffer_init(&state->spaRing); // reset ringbuffer
+			
+			if (seek == MUSIC_CONTROL_SEEK_START) { 
+				sf_seek(state->sndfile, 0, SEEK_SET);
+			} else {
+				sf_seek(state->sndfile, seek * state->sndinfo.samplerate, SEEK_CUR);
+			}
+			
+			refillRingBuffer(state, RING_BUFFER_SIZE / 4); // to avoid underun
+
+			atomic_store_explicit(&state->seekPending, 0, memory_order_relaxed);
+			pw_thread_loop_unlock(state->pwThreadLoop);
+		}
+
+		refillRingBuffer(state, RING_BUFFER_WATERMARK_HIGH);
 	}
 	return 0;
 }
@@ -176,6 +196,19 @@ static int audioProducerCallback(void* userdata)
 static void pwOnProcess(void *userdata)
 {
 	State* state = userdata;
+
+	// Check pending seek
+	int seekNow = atomic_load_explicit(&state->seekNow, memory_order_relaxed);
+	if (seekNow) {
+		atomic_store_explicit(&state->seekPending, seekNow, memory_order_relaxed);
+		atomic_store_explicit(&state->seekNow, 0, memory_order_relaxed);
+		spa_system_eventfd_write(state->pwLoop->system, state->spaEventFd, 1); // avoid hangs on poducer
+		return;
+	}
+	
+	if (atomic_load_explicit(&state->seekPending, memory_order_relaxed))
+		return;
+
         struct pw_buffer *b;
         struct spa_buffer *buf;
         uint8_t *p;
@@ -651,7 +684,7 @@ static bool initAudio(State* state)
 	}
 
 	// Prefill the ringbuffer
-	refillRingBuffer(state);
+	refillRingBuffer(state, RING_BUFFER_SIZE);
 
 	// Start Audio Producer
 	if (thrd_create(&state->audioProducerThread, audioProducerCallback, state) != thrd_success) {

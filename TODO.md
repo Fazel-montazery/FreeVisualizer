@@ -1,3 +1,5 @@
+Atomic memory_orders research.
+Is glfwKeyCallback interupt handler?? can Call big codes there?
 System audio output as input.
 Use Dynamic WaterMark system? (Can I tell pipewire to request a static amount of frames every time??)
 Somehow get rid of fonconfig leaks!

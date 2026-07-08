@@ -47,7 +47,8 @@ typedef struct
 	bool			isPaused;
 	int			duration;
 	_Atomic int		positionSec;
-	_Atomic int		seekNow;
+	_Atomic int		seekNow; // for process thread to catch (owner)
+	_Atomic int		seekPending; // for producer thread to act (owner)
 	_Atomic float		peakAmp;
 	_Atomic float		avgAmp;
 	_Atomic int		ampScale;
