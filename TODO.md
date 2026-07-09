@@ -1,3 +1,4 @@
+There are some bugs with windowing on desktop envs.
 Atomic memory_orders research.
 Is glfwKeyCallback interupt handler?? can Call big codes there?
 System audio output as input.

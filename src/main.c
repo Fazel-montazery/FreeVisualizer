@@ -46,9 +46,10 @@ int main(int argc, char** argv)
 
 	// Initializing atomics
 	atomic_store_explicit(&isExit, false, memory_order_relaxed);
-	atomic_store_explicit(&state.positionSec, 0, memory_order_relaxed);
+	atomic_store_explicit(&state.positionFrame, 0, memory_order_relaxed);
 	atomic_store_explicit(&state.seekNow, 0, memory_order_relaxed);
 	atomic_store_explicit(&state.seekPending, 0, memory_order_relaxed);
+	atomic_store_explicit(&state.isEOF, false, memory_order_relaxed);
 	atomic_store_explicit(&state.peakAmp, 0.0, memory_order_relaxed);
 	atomic_store_explicit(&state.avgAmp, 0.0, memory_order_relaxed);
 	atomic_store_explicit(&state.ampScale, 10, memory_order_relaxed); // 10 * 0.1 = 1.0
@@ -66,6 +67,7 @@ int main(int argc, char** argv)
 	if (!initShaders(&state, state.fragShaderPath)) return -1;
 	if (!state.testMode)
 		if (!initAudio(&state)) return -1;
+
 	loop(&state);
 	deinitApp(&state);
 	return 0;
@@ -131,10 +133,6 @@ static void refillRingBuffer(State* state, uint32_t n_frames)
 
 	while (n_frames > 0) {
                 while (true) {
-			atomic_store_explicit(&state->positionSec, 
-					       sf_seek(state->sndfile, 0, SEEK_CUR) / state->sndinfo.samplerate, 
-					       memory_order_relaxed);
- 
                         filled = spa_ringbuffer_get_write_index(&state->spaRing, &index);
                         /* this is how much samples we can write */
                         avail = RING_BUFFER_SIZE - filled;
@@ -159,10 +157,22 @@ static void refillRingBuffer(State* state, uint32_t n_frames)
 			readCount2 = sf_readf_float(state->sndfile, &state->ringBuffer[0], avail - readCount1);
 		}
 
-                n_frames -= readCount1 + readCount2;
+		uint32_t totalRead = readCount1 + readCount2;
+		if (totalRead == 0) { // EOF
+			atomic_store_explicit(&state->isEOF, true, memory_order_relaxed);
+			while (true) {
+				spa_system_eventfd_read(state->pwLoop->system, state->spaEventFd, &count);
+				if (atomic_load_explicit(&isExit, memory_order_relaxed) ||
+				    atomic_load_explicit(&state->seekPending, memory_order_relaxed))
+					return;
+			}
+		}
+		atomic_store_explicit(&state->isEOF, false, memory_order_relaxed);
+
+                n_frames -= totalRead;
  
                 /* and advance the ringbuffer */
-                spa_ringbuffer_write_update(&state->spaRing, index + readCount1 + readCount2);
+                spa_ringbuffer_write_update(&state->spaRing, index + totalRead);
         }
 }
 
@@ -181,6 +191,10 @@ static int audioProducerCallback(void* userdata)
 			} else {
 				sf_seek(state->sndfile, seek * state->sndinfo.samplerate, SEEK_CUR);
 			}
+
+			atomic_store_explicit(&state->positionFrame, 
+					       sf_seek(state->sndfile, 0, SEEK_CUR), 
+					       memory_order_relaxed);
 			
 			refillRingBuffer(state, RING_BUFFER_SIZE / 4); // to avoid underun
 
@@ -237,7 +251,12 @@ static void pwOnProcess(void *userdata)
         /* and fill the remainder with silence */
         to_silence = n_frames - to_read;
 
-        if (to_read > 0) {
+	if (to_read == 0) {
+		if (atomic_load_explicit(&state->isEOF, memory_order_relaxed)) // EOF and ringbuffer drained
+			atomic_store_explicit(&isExit, true, memory_order_relaxed);
+	} else {
+		atomic_fetch_add_explicit(&state->positionFrame, to_read, memory_order_relaxed);
+
                 /* read data into the buffer */
                 spa_ringbuffer_read_data(&state->spaRing,
                                 state->ringBuffer, RING_BUFFER_SIZE * stride,
@@ -605,8 +624,6 @@ static bool initAudio(State* state)
 		goto audio_deinit_0;
 	}
 
-	state->duration = state->sndinfo.frames / state->sndinfo.samplerate;
-
 	// Pipewire
 	state->spaPodBuilder = SPA_POD_BUILDER_INIT(state->spaPodbuffer, 1024);
 	pw_init(NULL, NULL);
@@ -730,7 +747,7 @@ static void loop(State* state)
 		// Printing duration and position
 		clearLineAnsi();
 
-		const int currentSecs = atomic_load_explicit(&state->positionSec, memory_order_relaxed);
+		const int currentSecs = atomic_load_explicit(&state->positionFrame, memory_order_relaxed) / state->sndinfo.samplerate;
 
 		if (state->renderSub) {
 			SrtTimeStamp currentTs = convertSecsToSrtTs(currentSecs);
@@ -740,7 +757,7 @@ static void loop(State* state)
 		fprintf(stdout, "[%s] %d/%d seconds",
 				(state->isPaused) ? "Paused" : "Playing",
 				currentSecs,
-				state->duration);
+				(int)(state->sndinfo.frames / state->sndinfo.samplerate));
 		fflush(stdout);
 
 		// Uploading uniforms

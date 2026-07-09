@@ -45,10 +45,10 @@ typedef struct
 	struct spa_ringbuffer	spaRing;
 	float*			ringBuffer;
 	bool			isPaused;
-	int			duration;
-	_Atomic int		positionSec;
+	_Atomic int		positionFrame;
 	_Atomic int		seekNow; // for process thread to catch (owner)
 	_Atomic int		seekPending; // for producer thread to act (owner)
+	_Atomic bool		isEOF;
 	_Atomic float		peakAmp;
 	_Atomic float		avgAmp;
 	_Atomic int		ampScale;
