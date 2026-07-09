@@ -15,6 +15,8 @@
 #define MUSIC_CONTROL_FAST_SEC 5
 #define MUSIC_CONTROL_SEEK_START INT8_MIN
 #define AMP_SCALE_CONTROL_UNIT 1 // scales back to 0.1 when converted to float
+#define AUDIO_MONITOR_SAMPLE_RATE 48000
+#define AUDIO_MONITOR_CHANNELS    2
 
 #define PATH_SIZE (1024)
 #define DATA_DIR ".FreeVisualizer"

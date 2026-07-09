@@ -13,6 +13,7 @@ typedef struct
 {
 	// General
 	bool			testMode;
+	bool			standaloneMode; // Capture system audio instead of reading a Music file
 	double			currentTime;
 	double			prevCursorTime;
 	bool			isCursorHidden;

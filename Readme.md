@@ -35,6 +35,10 @@ sudo make uninstall
 ```
 ## Usage
 ```bash
+fv [OPTIONS]
+```
+or
+```bash
 fv [OPTIONS] <mp3 file>
 ```
 ## Hotkeys

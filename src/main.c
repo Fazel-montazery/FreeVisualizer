@@ -24,7 +24,8 @@
 // Blueprints
 static bool initWindow(State* state, const int32_t width, const int32_t height);
 static bool initShaders(State* state, const char* fragShaderPath);
-static bool initAudio(State* state);
+static bool initAudioFromFile(State* state);
+static bool initAudioMonitor(State* state);
 static void loop(State* state);
 static void deinitApp(State* state);
 static void catchCtrlC(int sig);
@@ -65,8 +66,13 @@ int main(int argc, char** argv)
 
 	if (!initWindow(&state, DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT)) return -1;
 	if (!initShaders(&state, state.fragShaderPath)) return -1;
-	if (!state.testMode)
-		if (!initAudio(&state)) return -1;
+	if (!state.testMode) {
+		if (state.standaloneMode) {
+			if (!initAudioMonitor(&state)) return -1;
+		} else {
+			if (!initAudioFromFile(&state)) return -1;
+		}
+	}
 
 	loop(&state);
 	deinitApp(&state);
@@ -207,7 +213,53 @@ static int audioProducerCallback(void* userdata)
 	return 0;
 }
 
-static void pwOnProcess(void *userdata)
+// callback function for when we are using system audio output as input(monitor)
+static void pwOnProcessMonitor(void *userdata)
+{
+	State* state = userdata;
+
+        struct pw_buffer *b;
+        struct spa_buffer *buf;
+
+        if ((b = pw_stream_dequeue_buffer(state->pwStream)) == NULL)
+                return;
+
+        buf = b->buffer;
+        if (buf->datas[0].data) {
+		float *samples = buf->datas[0].data;
+		const int32_t stride = sizeof(float) * AUDIO_MONITOR_CHANNELS;
+		const int32_t n_frames = buf->datas[0].chunk->size / stride;
+
+		 // Proccessing
+		float peak = 0;
+		float avg = 0;
+		for (uint32_t i = 0; i < n_frames; i++) {
+			float s = fabs(samples[i]);
+			if (s > peak) peak = s;
+			avg += s;
+		}
+		avg /= n_frames;
+		
+		// EMA smoothing peak
+		float prePeak = atomic_load_explicit(&state->peakAmp, memory_order_relaxed);
+		if (peak > prePeak)
+			prePeak = PEAK_ALPHA_ATTACK  * peak + (1 - PEAK_ALPHA_ATTACK)  * prePeak;
+		else
+			prePeak = PEAK_ALPHA_RELEASE * peak + (1 - PEAK_ALPHA_RELEASE) * prePeak;
+
+		// EMA smoothing avg
+		float preAvg = atomic_load_explicit(&state->avgAmp, memory_order_relaxed);
+		preAvg = AVG_ALPHA * avg + (1 - AVG_ALPHA) * preAvg;
+
+		atomic_store_explicit(&state->peakAmp, prePeak, memory_order_relaxed);
+		atomic_store_explicit(&state->avgAmp,  preAvg,  memory_order_relaxed);
+	}
+
+	pw_stream_queue_buffer(state->pwStream, b);
+}
+
+// callback function for when we are reading from a file
+static void pwOnProcessFile(void *userdata)
 {
 	State* state = userdata;
 
@@ -598,8 +650,94 @@ static bool initShaders(State* state, const char* fragShaderPath)
 	return true;
 }
 
-// Loading the music and init audio system
-static bool initAudio(State* state)
+// init audio system for when we are using system audio as input (monitoring)
+static bool initAudioMonitor(State* state)
+{
+	state->spaPodBuilder = SPA_POD_BUILDER_INIT(state->spaPodbuffer, 1024);
+	pw_init(NULL, NULL);
+
+	state->pwThreadLoop = pw_thread_loop_new("FreeVisualizerMonitor", NULL);
+	if (!state->pwThreadLoop) {
+		fprintf(stderr, "Couldn't create pipewire's ThreadLoop: %s\n", strerror(errno));
+		goto audio_deinit_1;
+	}
+	state->pwLoop = pw_thread_loop_get_loop(state->pwThreadLoop);
+
+	pw_thread_loop_lock(state->pwThreadLoop);
+
+	if(pw_thread_loop_start(state->pwThreadLoop) != 0) {
+		fprintf(stderr, "Couldn't start pipewire ThreadLoop: %s\n", strerror(errno));
+		goto audio_deinit_2;
+	}
+	
+	// Setup Stream
+	state->pwProps = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio",
+			 PW_KEY_MEDIA_CATEGORY, "Capture",
+			 PW_KEY_MEDIA_ROLE, "Music",
+			 PW_KEY_STREAM_CAPTURE_SINK, "true",
+			 NULL);
+
+	if (!state->pwProps) {
+		fprintf(stderr, "Couldn't create pipewire's stream properties: %s\n", strerror(errno));
+		goto audio_deinit_2;
+	}
+
+	static const struct pw_stream_events streamEvents = {
+		PW_VERSION_STREAM_EVENTS,
+		.process = pwOnProcessMonitor,
+	};
+
+	state->pwStream = pw_stream_new_simple(state->pwLoop,
+					       "FreeVisualizer",
+					       state->pwProps,
+					       &streamEvents,
+					       state);
+
+	if (!state->pwStream) {
+		fprintf(stderr, "Couldn't create pipewire's stream object: %s\n", strerror(errno));
+		goto audio_deinit_2;
+	}
+
+	state->spaParams[0] = spa_format_audio_raw_build(&state->spaPodBuilder, SPA_PARAM_EnumFormat,
+							 &SPA_AUDIO_INFO_RAW_INIT(
+								 .format = SPA_AUDIO_FORMAT_F32,
+								 .channels = AUDIO_MONITOR_CHANNELS,
+								 .rate = AUDIO_MONITOR_SAMPLE_RATE));
+
+	if (!state->spaParams[0]) {
+		fprintf(stderr, "Couldn't create spa pod: %s\n", strerror(errno));
+		goto audio_deinit_3;
+	}
+
+	int res = pw_stream_connect(state->pwStream,
+			  PW_DIRECTION_INPUT,
+			  PW_ID_ANY,
+			  PW_STREAM_FLAG_AUTOCONNECT |
+			  PW_STREAM_FLAG_MAP_BUFFERS |
+			  PW_STREAM_FLAG_RT_PROCESS,
+			  state->spaParams, 1);
+
+	if (res < 0) {
+		fprintf(stderr, "Couldn't connect to pipewire stream: %s\n", strerror(errno));
+		goto audio_deinit_3;
+	}
+
+        pw_thread_loop_unlock(state->pwThreadLoop);
+
+	return true;
+
+audio_deinit_3:
+	pw_stream_destroy(state->pwStream);
+audio_deinit_2:
+	pw_thread_loop_unlock(state->pwThreadLoop);
+	pw_thread_loop_destroy(state->pwThreadLoop);
+audio_deinit_1:
+	pw_deinit();
+	return false;
+}
+
+// init audio system for when we are reading from a file
+static bool initAudioFromFile(State* state)
 {
 	state->sndfile = sf_open(state->musicPath, SFM_READ, &state->sndinfo);
 
@@ -662,7 +800,7 @@ static bool initAudio(State* state)
 
 	static const struct pw_stream_events streamEvents = {
 		PW_VERSION_STREAM_EVENTS,
-		.process = pwOnProcess,
+		.process = pwOnProcessFile,
 	};
 
 	state->pwStream = pw_stream_new_simple(state->pwLoop,
@@ -744,21 +882,22 @@ static void loop(State* state)
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		// Printing duration and position
-		clearLineAnsi();
+		if (!state->standaloneMode && !state->testMode) {
+			// Printing duration and position
+			clearLineAnsi();
+			const int currentSecs = atomic_load_explicit(&state->positionFrame, memory_order_relaxed) / state->sndinfo.samplerate;
 
-		const int currentSecs = atomic_load_explicit(&state->positionFrame, memory_order_relaxed) / state->sndinfo.samplerate;
+			fprintf(stdout, "[%s] %d/%d seconds",
+					(state->isPaused) ? "Paused" : "Playing",
+					currentSecs,
+					(int)(state->sndinfo.frames / state->sndinfo.samplerate));
+			fflush(stdout);
 
-		if (state->renderSub) {
-			SrtTimeStamp currentTs = convertSecsToSrtTs(currentSecs);
-			SrtSection* currentSection = getSectionByTime(&state->srtHandle, currentTs);
+			if (state->renderSub) {
+				SrtTimeStamp currentTs = convertSecsToSrtTs(currentSecs);
+				SrtSection* currentSection = getSectionByTime(&state->srtHandle, currentTs);
+			}
 		}
-
-		fprintf(stdout, "[%s] %d/%d seconds",
-				(state->isPaused) ? "Paused" : "Playing",
-				currentSecs,
-				(int)(state->sndinfo.frames / state->sndinfo.samplerate));
-		fflush(stdout);
 
 		// Uploading uniforms
 		glUniform1f(state->uniformLocTime, state->currentTime);
@@ -793,7 +932,7 @@ static void deinitApp(State* state)
 	writeSavedColors(state);
 
 	// Deinit Audio
-	if (!state->testMode) {
+	if (!state->testMode && !state->standaloneMode) {
 		// Join producer thread
 		spa_system_eventfd_write(state->pwLoop->system, state->spaEventFd, 1);
 		thrd_join(state->audioProducerThread, NULL);
@@ -811,6 +950,14 @@ static void deinitApp(State* state)
 
 		// sndfile
 		sf_close(state->sndfile);
+	}
+
+	if (state->standaloneMode) {
+		pw_thread_loop_lock(state->pwThreadLoop);
+		pw_stream_destroy(state->pwStream);
+		pw_thread_loop_unlock(state->pwThreadLoop);
+		pw_thread_loop_destroy(state->pwThreadLoop);
+		pw_deinit();
 	}
 
 	free_srt(state->srtHandle);

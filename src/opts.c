@@ -110,6 +110,7 @@ bool parseOpts( int argc, char *argv[], State* state)
 
 	state->fullscreen = false;
 	state->renderSub = false;
+	state->standaloneMode = false;
 
 	const char* home = getHomeDir(true);
 	if (!home)
@@ -262,10 +263,7 @@ bool parseOpts( int argc, char *argv[], State* state)
 	if (optind < argc) {
 		state->musicPath = argv[optind];
 	} else {
-		printf("Usage: %s [OPTIONS] <mp3 file>\n"
-			"run '%s -h' for help\n", argv[0], argv[0]);
-
-		goto return_false;
+		state->standaloneMode = true;
 	}
 
 	return true;
