@@ -30,8 +30,8 @@
 					key == GLFW_KEY_9)
 #define FVGLFW_NUMS_KEY_INT(key) (key - GLFW_KEY_0)
 
-#define DEFAULT_WIN_WIDTH (1000)
-#define DEFAULT_WIN_HEIGHT (1000)
+#define DEFAULT_WIN_WIDTH (500)
+#define DEFAULT_WIN_HEIGHT (500)
 
 #define UNIFORM_NAME_RESOLUTION "Resolution"
 #define UNIFORM_NAME_MOUSE "Mouse"

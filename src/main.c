@@ -597,6 +597,9 @@ static bool initWindow(State* state, const int32_t width, const int32_t height)
 		return false;
 	}
 
+	// Update winWidth/Height to their actual framebuffer size (not logical size)
+	glfwGetFramebufferSize(state->window, &state->winWidth, &state->winHeight);
+
 	return true;
 }
 
