@@ -1,8 +1,6 @@
 Input from mic?
-There are some bugs with windowing on desktop envs.
+Improve the makefile
 Atomic memory_orders research.
-Is glfwKeyCallback interupt handler?? can Call big codes there?
-System audio output as input.
 Use Dynamic WaterMark system? (Can I tell pipewire to request a static amount of frames every time??)
 Somehow get rid of fonconfig leaks!
 wtf is that <unknown module> in Asan reports?
@@ -15,5 +13,4 @@ Improve the Performance(get rid of length() and sin()) of shaders.
 Improve the quality (jaggedness) of DyingStar.
 Research about gamma correction.
 Realtime Tempo Detection.
-Enhanced scene selection. (Case-Isensitve and inline compeletion)
 Texture Support.

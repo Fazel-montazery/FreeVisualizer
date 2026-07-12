@@ -1,0 +1,28 @@
+#compdef fv
+
+_fv() {
+    local scene_dir="$HOME/.FreeVisualizer/shaders"
+
+    _arguments \
+        '(-h --help)'{-h,--help}'[Print help]' \
+        '(-s --scene)'{-s,--scene}'[Which scene to use]:scene:_fv_scenes' \
+        '(-l --ls)'{-l,--ls}'[List scenes]' \
+        '(-S --yt-search)'{-S,--yt-search}'[Search youtube, return 10 results]' \
+        '(-d --yt-dl)'{-d,--yt-dl}'[Download audio of a YouTube video by title]' \
+        '(-f --fullscreen)'{-f,--fullscreen}'[Start in fullscreen mode]' \
+        '(-p --path)'{-p,--path}'[Use the shader at path]:file:_files' \
+        '(-t --test)'{-t,--test}'[No audio mode, testing shaders]' \
+        '(-c --color)'{-c,--color}'[Custom colors, e.g. "#FF0000 #0000FF"]' \
+        '(-r --random)'{-r,--random}'[Random color pallet]' \
+        '(-v --sub)'{-v,--sub}'[Provide a .srt subtitle file]:file:_files -g "*.srt"'
+}
+
+_fv_scenes() {
+    local scene_dir="$HOME/.FreeVisualizer/shaders"
+    local -a files scenes
+    files=("${(@f)$(ls -1 "$scene_dir" 2>/dev/null)}")
+    scenes=("${files[@]%.*}")
+    _describe 'scene' scenes
+}
+
+_fv

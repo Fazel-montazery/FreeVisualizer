@@ -14,6 +14,10 @@ TARGET := fv
 FLAGS_RELEASE := -Wall -O2 -DNDEBUG
 FLAGS_DEBUG := -Wall -O0 -g3 -fsanitize=address
 
+BASH_COMPLETION_DIR := $(shell pkg-config --variable=completionsdir bash-completion 2>/dev/null || echo /etc/bash_completion.d)
+ZSH_COMPLETION_DIR  := /usr/local/share/zsh/site-functions
+FISH_COMPLETION_DIR := $(shell pkg-config --variable=completionsdir fish 2>/dev/null || echo $(PREFIX)/share/fish/vendor_completions.d)
+
 all: main
 
 main: ${SRC}
@@ -34,6 +38,18 @@ install: ${TARGET}
 	rm -rf ${SHADERDIR}
 	install -d ${SHADERDIR}
 	install -m 444  ${SHADERS} ${SHADERDIR}/
+	@if command -v bash >/dev/null 2>&1; then \
+		install -Dm644 autocomplete/fv.bash $(DESTDIR)$(BASH_COMPLETION_DIR)/fv; \
+		echo "  bash -> $(BASH_COMPLETION_DIR)/fv"; \
+	fi
+	@if command -v zsh >/dev/null 2>&1; then \
+		install -Dm644 autocomplete/_fv $(DESTDIR)$(ZSH_COMPLETION_DIR)/_fv; \
+		echo "  zsh  -> $(ZSH_COMPLETION_DIR)/_fv"; \
+	fi
+	@if command -v fish >/dev/null 2>&1; then \
+		install -Dm644 autocomplete/fv.fish $(DESTDIR)$(FISH_COMPLETION_DIR)/fv.fish; \
+		echo "  fish -> $(FISH_COMPLETION_DIR)/fv.fish"; \
+	fi
 
 uninstall:
 	rm -f ${BINDIR}/${TARGET}
